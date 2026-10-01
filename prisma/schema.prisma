@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  VOLUNTEER
+  OTHER
+}
+
+enum OpportunityKind {
+  INTERNSHIP
+  HACKATHON
+  WORKSHOP
+  JOB
+}
+
+enum ApplicationStatus {
+  APPLIED
+  SHORTLISTED
+  INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  passwordHash   String
+  headline       String?
+  school         String?
+  graduationYear Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  skills       Skill[]
+  sessions     Session[]
+  bookmarks    Bookmark[]
+  applications Application[]
+  profile      Profile?
+  invitations  Invitation[]  @relation("Invitee")
+  sentInvites  Invitation[]  @relation("Inviter")
+
+  @@index([email])
+}
+
+model Profile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  bio          String?
+  location     String?
+  remoteOnly   Boolean  @default(false)
+  hoursPerWeek Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Skill {
+  id     String @id @default(cuid())
+  userId String
+  name   String
+  slug   String
+  level  Int    @default(3)
+
+  definitionId String
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  definition SkillDefinition @relation(fields: [definitionId], references: [id])
+
+  @@unique([userId, slug])
+  @@index([slug])
+  @@index([definitionId])
+}
+
+model SkillDefinition {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  label     String
+  aliases   String[] @default([])
+  createdAt DateTime @default(now())
+
+  opportunities OpportunitySkill[]
+  users         Skill[]
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  userAgent  String?
+  ipHash     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Opportunity {
+  id         String          @id @default(cuid())
+  source     String
+  externalId String
+  kind       OpportunityKind @default(JOB)
+
+  title          String
+  company        String?
+  location       String?
+  remote         Boolean        @default(false)
+  employmentType EmploymentType @default(OTHER)
+  salaryMin      Int?
+  salaryMax      Int?
+  currency       String?
+  description    String?
+  applyUrl       String?
+  logoUrl        String?
+
+  raw Json?
+
+  publishedAt DateTime?
+  expiresAt   DateTime?
+  fetchedAt   DateTime  @default(now())
+
+  bookmarks    Bookmark[]
+  applications Application[]
+  matches      OpportunitySkill[]
+
+  @@unique([source, externalId])
+  @@index([kind])
+  @@index([publishedAt])
+}
+
+model OpportunitySkill {
+  opportunityId String
+  skillSlug     String
+
+  opportunity Opportunity     @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  skill       SkillDefinition @relation(fields: [skillSlug], references: [slug], onDelete: Cascade)
+
+  @@id([opportunityId, skillSlug])
+  @@index([skillSlug])
+}
+
+model Bookmark {
+  id            String   @id @default(cuid())
+  userId        String
+  opportunityId String
+  createdAt     DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, opportunityId])
+  @@index([userId])
+}
+
+model Application {
+  id            String            @id @default(cuid())
+  userId        String
+  opportunityId String
+  status        ApplicationStatus @default(APPLIED)
+  notes         String?
+  appliedAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, opportunityId])
+  @@index([userId, status])
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  inviterId String
+  inviteeId String
+  message   String?
+  accepted  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  inviter User @relation("Inviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee User @relation("Invitee", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@unique([inviterId, inviteeId])
+  @@index([inviteeId, accepted])
+}

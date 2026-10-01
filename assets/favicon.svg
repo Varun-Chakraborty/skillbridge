@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SkillBridge">
+  <rect width="64" height="64" rx="14" fill="#fd593d" />
+  <text
+    x="32"
+    y="45"
+    font-family="Space Grotesk, DM Sans, system-ui, sans-serif"
+    font-size="38"
+    font-weight="700"
+    text-anchor="middle"
+    fill="#fbf8f4"
+  >
+    S
+  </text>
+</svg>

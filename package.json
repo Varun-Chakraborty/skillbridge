@@ -11,7 +11,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "jobs:sync": "tsx scripts/sync-jobs.ts"
+    "jobs:sync": "tsx scripts/sync-jobs.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -19,6 +20,7 @@
     "@prisma/client": "7.10.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
+    "dotenv": "18.0.5",
     "lucide-react": "^1.49.0",
     "next": "16.3.8",
     "pg": "8.23.1",

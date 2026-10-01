@@ -1,0 +1,51 @@
+name: Sync job listings
+
+# Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC. GitHub schedules this on the
+# default branch and may delay the start by a few minutes under load, which is
+# fine for a refresh job.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  # Also runnable by hand from the Actions tab, which is how you recover after
+  # adding a new ATS board or debugging a source.
+  workflow_dispatch:
+
+# GitHub cancels a run if a new one starts for the same ref, so an overrun cannot
+# stack syncs.
+concurrency:
+  group: sync-jobs
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Runs `prisma generate` via postinstall. Needs no DATABASE_URL, so the
+      # secret is deliberately not passed to this step.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx prisma migrate deploy
+
+      - name: Sync job listings
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Optional ATS boards. Kept as a secret because it is configuration you
+          # are likely to change without wanting a code change each time.
+          ATS_SOURCES: ${{ secrets.ATS_SOURCES }}
+        run: npm run jobs:sync

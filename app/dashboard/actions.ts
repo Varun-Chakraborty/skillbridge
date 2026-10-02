@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { destroySession, getSessionUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
-import { slugifySkill } from "@/lib/jobs/normalize";
+import { setUserSkills } from "@/lib/user-skills";
 
 /**
  * Server actions for the dashboard. Each one re-checks the session rather than
@@ -65,48 +65,22 @@ export async function applyToOpportunityAction(opportunityId: string) {
   return { applied: true };
 }
 
+/**
+ * Replaces the skills the student picked by hand in the editor.
+ *
+ * Only the manual set is rewritten. Skills inferred from the resume are left
+ * alone, so tidying this list does not silently drop the evidence the resume
+ * provides — and a skill picked here that the resume also mentions is promoted
+ * to a manual claim rather than overwritten.
+ */
 export async function updateSkillsAction(slugs: string[]) {
   const user = await getSessionUser();
   if (!user) return { ok: false, error: "Unauthorized." };
 
-  const cleaned = [
-    ...new Set(
-      slugs
-        .map((slug) => slugifySkill(slug))
-        .filter((slug) => slug.length >= 2 && slug.length <= 40),
-    ),
-  ];
-
-  // Resolve catalog rows first: a user skill carries a foreign key to one, so the
-  // definition has to exist before the upserts below can reference its id.
-  const definitionIds = new Map<string, string>();
-  for (const slug of cleaned) {
-    const definition = await prisma.skillDefinition.upsert({
-      where: { slug },
-      create: { slug, label: slug.replace(/-/g, " ") },
-      update: {},
-      select: { id: true },
-    });
-    definitionIds.set(slug, definition.id);
-  }
-
-  await prisma.$transaction([
-    prisma.skill.deleteMany({ where: { userId: user.id, slug: { notIn: cleaned } } }),
-    ...cleaned.map((slug) =>
-      prisma.skill.upsert({
-        where: { userId_slug: { userId: user.id, slug } },
-        create: {
-          userId: user.id,
-          slug,
-          name: slug.replace(/-/g, " "),
-          definitionId: definitionIds.get(slug)!,
-        },
-        update: {},
-      }),
-    ),
-  ]);
+  await setUserSkills(user.id, { manual: slugs });
 
   revalidatePath("/dashboard");
+  revalidatePath("/onboarding");
   return { ok: true };
 }
 

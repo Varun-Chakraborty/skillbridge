@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
-import { slugifySkill } from "@/lib/jobs/normalize";
+import { parseResumeInput } from "@/lib/resume";
+import { saveResume } from "@/lib/profile/resume-store";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -12,6 +13,9 @@ type Body = {
   email?: unknown;
   name?: unknown;
   password?: unknown;
+  // Optional resume fields. Registration works without them, but a student who
+  // fills them in lands on a scored dashboard instead of an empty one.
+  resume?: Record<string, unknown>;
 };
 
 export async function POST(request: Request) {
@@ -49,24 +53,14 @@ export async function POST(request: Request) {
     select: { id: true, email: true, name: true },
   });
 
-  const skillNames = Array.isArray((body as { skills?: unknown }).skills)
-    ? ((body as { skills: unknown[] }).skills).filter((s): s is string => typeof s === "string")
-    : [];
-
-  for (const raw of skillNames) {
-    const slug = slugifySkill(raw);
-    if (slug.length < 2 || slug.length > 40) continue;
-    const definition = await prisma.skillDefinition.upsert({
-      where: { slug },
-      create: { slug, label: raw.trim() },
-      update: {},
-      select: { id: true },
-    });
-    await prisma.skill.upsert({
-      where: { userId_slug: { userId: user.id, slug } },
-      create: { userId: user.id, slug, name: raw.trim(), definitionId: definition.id },
-      update: {},
-    });
+  // A resume supplied during signup goes through the same validation and
+  // extraction as a later edit, so the two paths cannot drift apart. A bad
+  // resume field does not fail registration: the account is already valid, and
+  // the student can fix the field on the resume screen.
+  const resume = body.resume && typeof body.resume === "object" ? body.resume : null;
+  if (resume) {
+    const parsed = parseResumeInput(resume);
+    if (parsed.ok) await saveResume(user.id, parsed.value);
   }
 
   await createSession(user.id, {

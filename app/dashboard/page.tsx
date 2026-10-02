@@ -83,7 +83,7 @@ export default async function DashboardPage({
       prisma.skill.findMany({
         where: { userId: user.id },
         orderBy: { slug: "asc" },
-        select: { slug: true, name: true },
+        select: { slug: true, name: true, origin: true },
       }),
       prisma.bookmark.count({ where: { userId: user.id } }),
       prisma.application.count({ where: { userId: user.id } }),
@@ -95,6 +95,11 @@ export default async function DashboardPage({
     ]);
 
   const appliedIds = new Set(applied.map((row) => row.opportunityId));
+
+  // Manual and derived skills are edited in different places, so the dashboard
+  // only needs to hand each group to the right one.
+  const manualSkills = skills.filter((skill) => skill.origin === "MANUAL");
+  const derivedSkills = skills.filter((skill) => skill.origin === "DERIVED");
 
   // Only credit an upstream that actually appears in what we just returned, and
   // only that specific board, so a page of Figma roles links Figma rather than
@@ -132,6 +137,9 @@ export default async function DashboardPage({
             </Link>
             <Link href="/dashboard#skills" className="rounded-full px-4 py-2 text-sm font-semibold hover:bg-muted">
               My skills
+            </Link>
+            <Link href="/onboarding" className="rounded-full px-4 py-2 text-sm font-semibold hover:bg-muted">
+              Resume
             </Link>
           </nav>
 
@@ -182,8 +190,8 @@ export default async function DashboardPage({
               </div>
             ) : (
               <p className="mt-4 max-w-md text-lg text-muted-foreground">
-                You have not added any skills yet, so nothing here is scored against your
-                profile.
+                Nothing to match against yet. Add your resume and we will read your skills out of
+                it.
               </p>
             )}
           </div>
@@ -215,8 +223,15 @@ export default async function DashboardPage({
                 <>
                   <h2 className="mt-2 font-display text-2xl font-bold">Nothing scored yet</h2>
                   <p className="mt-1 text-sm opacity-80">
-                    Add skills below, then run a sync to refresh the listings we match against.
+                    Add your resume and we will read your skills out of it, then rank every
+                    listing against them.
                   </p>
+                  <Link
+                    href="/onboarding"
+                    className="mt-4 inline-block rounded-full bg-background px-4 py-2 text-sm font-bold text-foreground"
+                  >
+                    Add your resume
+                  </Link>
                 </>
               )}
             </div>
@@ -318,6 +333,13 @@ export default async function DashboardPage({
                       </div>
                     ) : null}
 
+                    {match.seniority > 0 ? (
+                      <p className="mt-3 text-xs font-semibold text-warning">
+                        Aimed at experienced candidates. The skills overlap, but the role likely
+                        wants a track record you have not started yet.
+                      </p>
+                    ) : null}
+
                     <div className="mt-auto flex items-center justify-between gap-2 border-t-2 border-border pt-4">
                       {match.score === null ? (
                         <span className="text-sm font-semibold text-muted-foreground">
@@ -366,11 +388,21 @@ export default async function DashboardPage({
         </section>
 
         <section id="skills" className="mt-10 scroll-mt-24 rounded-3xl border-2 border-border bg-card p-5 sm:p-6">
-          <h2 className="font-display text-2xl font-bold">Skills we match on</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            These decide what gets matched. Pick a few, then save.
-          </p>
-          <SkillsEditor current={skills.map((skill) => skill.slug)} />
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-2xl font-bold">Skills we match on</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Your resume supplies most of these. Add anything it missed.
+              </p>
+            </div>
+            <Link href="/onboarding" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Edit resume
+            </Link>
+          </div>
+          <SkillsEditor
+            current={manualSkills.map((skill) => skill.slug)}
+            derived={derivedSkills.map((skill) => skill.slug)}
+          />
         </section>
 
         <section id="teams" className="mt-10 grid scroll-mt-24 gap-6 lg:grid-cols-12">
@@ -415,14 +447,19 @@ export default async function DashboardPage({
             <h2 className="font-display text-2xl font-bold">How matching works</h2>
             <ul className="mt-4 space-y-4 text-sm opacity-85">
               <li>
-                <span className="font-bold text-secondary">Skills listed</span> — every posting is
-                scanned for skills we recognise, and your profile decides which ones count as a
-                hit.
+                <span className="font-bold text-secondary">Skills from your resume</span> — we
+                read the skills out of what you have written, so you never tag them yourself.
+                Anything you claim by hand counts for more than something we inferred.
               </li>
               <li>
                 <span className="font-bold text-secondary">Coverage</span> — the score is the
-                weighted share of a posting&apos;s skills that you claim, so a posting asking for
-                more than you have scores lower.
+                weighted share of a posting&apos;s skills that you have, so a posting asking for
+                more than you do scores lower.
+              </li>
+              <li>
+                <span className="font-bold text-secondary">Level</span> — internships and junior
+                roles come first. Senior postings are shown too, but flagged, because the skills
+                overlapping does not mean the role is open to you.
               </li>
               <li>
                 <span className="font-bold text-secondary">Honest gaps</span> — postings we

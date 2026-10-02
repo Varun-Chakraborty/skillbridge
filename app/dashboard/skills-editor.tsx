@@ -9,7 +9,15 @@ import { knownSkills } from "@/lib/jobs/skills";
 
 const SUGGESTED = knownSkills().slice(0, 14);
 
-export default function SkillsEditor({ current }: { current: string[] }) {
+export default function SkillsEditor({
+  current,
+  derived = [],
+}: {
+  /** Skills the student picked by hand. Editable here. */
+  current: string[];
+  /** Skills read out of the resume. Shown for context, not editable here. */
+  derived?: string[];
+}) {
   const router = useRouter();
   const [selected, setSelected] = useState<string[]>(current);
   const [draft, setDraft] = useState("");
@@ -88,9 +96,31 @@ export default function SkillsEditor({ current }: { current: string[] }) {
         </ul>
       ) : (
         <p className="mt-3 text-sm text-muted-foreground">
-          Nothing selected yet, so nothing gets scored.
+          Nothing added here yet. Your resume still counts on its own.
         </p>
       )}
+
+      {derived.length ? (
+        <>
+          <p className="mt-6 text-xs font-bold uppercase text-muted-foreground">
+            From your resume
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {derived.map((slug) => (
+              <li
+                key={slug}
+                className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground"
+              >
+                {slug.replace(/-/g, " ")}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted-foreground">
+            These come from your resume and are matched automatically. Edit the resume to change
+            them.
+          </p>
+        </>
+      ) : null}
 
       <p className="mt-4 text-xs font-bold uppercase text-muted-foreground">Common skills</p>
       <div className="mt-2 flex flex-wrap gap-1.5">

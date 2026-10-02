@@ -3,6 +3,16 @@ import { slugifySkill } from "./normalize";
 type SkillEntry = {
   slug: string;
   label: string;
+  /**
+   * Other ways this skill gets written. Needed whenever the common spelling is
+   * not the slug: "postgres" is what people type and what job descriptions say,
+   * while the slug has to stay stable at "postgresql".
+   */
+  aliases?: string[];
+  /**
+   * Guards against a bare slug matching something unrelated. A slug that only
+   * appears in real phrases (a language, a licence class, a place) needs one.
+   */
   require?: RegExp;
 };
 
@@ -13,17 +23,44 @@ const VOCABULARY: SkillEntry[] = [
   { slug: "java", label: "Java" },
   { slug: "kotlin", label: "Kotlin" },
   { slug: "swift", label: "Swift" },
-  { slug: "c", label: "C", require: /\b(in|with|using)\s+c\b|\bc\s*(programming|language)\b|\bc\s*\/\s*c\+\+|\bansi\s+c\b/i },
+  // A single letter needs its context, but the context has to cover the ways
+  // people actually write it: "used C", "in C", "C developer", "C/C++".
+  { slug: "c", label: "C", require: /\b(in|with|using|used|wrote|built|program(me|ming)?(s)?\s+in)\s+c\b|\bc\s*(programming|language|developer|engineer)\b|\bc\s*\/\s*c\+\+|\bansi\s+c\b/i },
   { slug: "c++", label: "C++" },
   { slug: "c#", label: "C#", require: /\bc#|\bcsharp\b|\.net\b|\basp\.net\b/i },
-  { slug: "rust", label: "Rust" },
-  { slug: "go", label: "Go", require: /\bgolang\b|\bgo\s+(lang|developer|engineer|programmer)/i },
+  // "Rust belt" is a region, not the language, and a CV or a job post is exactly
+  // the kind of text that mentions where someone is from.
+  {
+    slug: "rust",
+    label: "Rust",
+    aliases: ["cargo", "rustacean", "rs"],
+    require: /\brust\b(?!\s*belt)|\bcargo\b|\brustacean\b|\bcrate\b/i,
+  },
+  // "golang" is the only unambiguous spelling of the language; plain "go" is
+  // far too common an English word to match on its own.
+  {
+    slug: "go",
+    label: "Go",
+    aliases: ["golang"],
+    require: /\bgolang\b|\bgo\s+(lang|language|developer|engineer|programmer)/i,
+  },
   { slug: "ruby", label: "Ruby" },
   { slug: "php", label: "PHP" },
   { slug: "scala", label: "Scala" },
-  { slug: "r", label: "R", require: /\br\s+(language|programmer|shiny|script|package)|\brstudio\b|\br\s+dashboard|\bposit\b/i },
+  // "RStudio" is one word, so the guard accepts it without a separator.
+  { slug: "r", label: "R", require: /\br\s+(language|programmer|shiny|script|package|dashboard)|\brstudio\b|\bposit\b|\br\s+programming/i },
+  { slug: "rstudio", label: "RStudio" },
   { slug: "sql", label: "SQL" },
   { slug: "bash", label: "Bash" },
+  {
+    slug: "postgresql",
+    label: "PostgreSQL",
+    aliases: ["postgres", "psql"],
+  },
+  { slug: "mysql", label: "MySQL" },
+  { slug: "mongodb", label: "MongoDB" },
+  { slug: "redis", label: "Redis" },
+  { slug: "sqlite", label: "SQLite" },
 
   { slug: "react", label: "React" },
   { slug: "nextjs", label: "Next.js" },
@@ -42,8 +79,12 @@ const VOCABULARY: SkillEntry[] = [
     require: /\brest[\s-]?(api|apis|endpoint|endpoints|service|services|client)\b|\brestful\b/i,
   },
 
-  { slug: "aws", label: "AWS" },
-  { slug: "gcp", label: "Google Cloud" },
+  { slug: "aws", label: "AWS", aliases: ["amazon web services"] },
+  {
+    slug: "gcp",
+    label: "Google Cloud",
+    aliases: ["google cloud platform", "google cloud"],
+  },
   { slug: "azure", label: "Azure" },
   { slug: "docker", label: "Docker" },
   { slug: "kubernetes", label: "Kubernetes" },
@@ -88,17 +129,27 @@ const VOCABULARY: SkillEntry[] = [
   { slug: "looker", label: "Looker" },
 ];
 
-const COMPILED = VOCABULARY.map((entry) => ({
-  ...entry,
-  pattern: new RegExp(`(?<![a-z0-9+#])${escape(entry.slug)}(?![a-z0-9+#])`, "i"),
-  labelPattern: entry.label.includes(" ")
-    ? new RegExp(`(?<![a-z0-9+#])${escape(entry.label)}(?![a-z0-9+#])`, "i")
-    : null,
-}));
 
 function escape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/** Word-bounded matcher, so "git" does not match inside "digital". */
+function wordPattern(value: string): RegExp {
+  return new RegExp(`(?<![a-z0-9+#])${escape(value)}(?![a-z0-9+#])`, "i");
+}
+
+const COMPILED = VOCABULARY.map((entry) => ({
+  ...entry,
+  // Every spelling we accept, matched independently so one cannot mask
+  // another. The label counts as a spelling in its own right because it often
+  // differs from the slug: "nextjs" and "Next.js" are the same skill written
+  // two ways, and keying only off the space silently dropped every dotted
+  // label like Next.js, Node.js and Power BI.
+  patterns: [entry.slug, entry.label, ...(entry.aliases ?? [])]
+    .filter((value, index, all) => all.indexOf(value) === index)
+    .map(wordPattern),
+}));
 
 export function extractSkills(
   ...texts: (string | null | undefined)[]
@@ -108,8 +159,10 @@ export function extractSkills(
 
   const found: { slug: string; label: string }[] = [];
   for (const entry of COMPILED) {
-    const hit = entry.pattern.test(text) || entry.labelPattern?.test(text);
-    if (!hit) continue;
+    if (!entry.patterns.some((pattern) => pattern.test(text))) continue;
+    // The context guard is checked against the whole text rather than the
+    // matched fragment, so an ambiguous slug needs the surrounding phrase
+    // somewhere in the document to count.
     if (entry.require && !entry.require.test(text)) continue;
     found.push({ slug: entry.slug, label: entry.label });
   }

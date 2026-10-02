@@ -54,6 +54,17 @@ model User {
   @@index([email])
 }
 
+enum ResumeSource {
+  MANUAL
+  PARSED
+}
+
+/// The student's resume. Every field is a plain column so a future ATS parser
+/// can populate the same shape the form writes by hand: the form and the parser
+/// both produce a Resume, and nothing downstream needs to know which it was.
+///
+/// `rawText` keeps the pasted or uploaded text so extraction can be re-run
+/// against it later without asking the student to retype anything.
 model Profile {
   id           String   @id @default(cuid())
   userId       String   @unique
@@ -61,10 +72,31 @@ model Profile {
   location     String?
   remoteOnly   Boolean  @default(false)
   hoursPerWeek Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+
+  experience String?
+  education  String?
+  projects   String?
+  skillsText String?
+
+  githubUrl    String?
+  linkedinUrl  String?
+  portfolioUrl String?
+
+  source   ResumeSource @default(MANUAL)
+  parsedAt DateTime?
+  rawText  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum SkillOrigin {
+  /// Typed by the student, either in the resume form or the skills editor.
+  MANUAL
+  /// Read out of resume text by the shared vocabulary in lib/jobs/skills.ts.
+  DERIVED
 }
 
 model Skill {
@@ -74,6 +106,8 @@ model Skill {
   slug   String
   level  Int    @default(3)
 
+  origin SkillOrigin @default(MANUAL)
+
   definitionId String
 
   user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -82,6 +116,7 @@ model Skill {
   @@unique([userId, slug])
   @@index([slug])
   @@index([definitionId])
+  @@index([userId, origin])
 }
 
 model SkillDefinition {

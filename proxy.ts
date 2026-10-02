@@ -2,7 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE = "skillbridge_session";
 
-const PROTECTED = ["/dashboard", "/api/matches", "/api/bookmarks", "/api/team", "/api/profile"];
+const PROTECTED = [
+  "/dashboard",
+  "/onboarding",
+  "/api/matches",
+  "/api/bookmarks",
+  "/api/team",
+  "/api/profile",
+];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

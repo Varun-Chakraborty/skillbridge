@@ -1,18 +1,24 @@
 import "dotenv/config";
 
 import { prisma } from "@/lib/db";
+import { VOCABULARY_VERSION } from "@/lib/jobs/skills";
+import { repairVocabulary } from "@/lib/jobs/vocab-repair";
 import { syncSource } from "../lib/jobs/sync";
 import type { NormalizedJob } from "../lib/jobs/normalize";
 
 /**
- * Guards a subtle data-correctness bug: replacing a posting's skill links must
- * delete the old set even when the new set is empty.
+ * Two related guarantees about how skill links stay honest.
  *
- * The bug this exists for: the delete used to sit inside `if (skills.length)`,
- * so a posting edited to stop mentioning any recognised skill kept the links it
- * had before and went on matching on skills its description no longer
- * contained. The create is still conditional, because there is no point issuing
- * an empty insert.
+ * 1. Replacing a posting's links must delete the old set even when the new set
+ *    is empty. The bug this exists for: the delete used to sit inside
+ *    `if (skills.length)`, so a posting edited to stop mentioning any recognised
+ *    skill kept the links it had before and went on matching on skills its
+ *    description no longer contained.
+ *
+ * 2. A posting whose links came from an older vocabulary must gain the skills
+ *    the current one finds, without ever losing ones it already has. Sync only
+ *    re-derives postings still in a feed, so anything that aged out goes stale
+ *    until something looks at it; matching does that lazily, on read.
  *
  * Writes only to the `test:link-drift` source and deletes it on the way out.
  */
@@ -63,6 +69,12 @@ async function main() {
     );
   }
 
+  /** Same shape as `check`, for assertions that are not about the link set. */
+  async function expect(label: string, ok: boolean, expected: string, actual: string) {
+    if (!ok) failures += 1;
+    process.stdout.write(`${ok ? "PASS" : "FAIL"}  ${label}\n      expected ${expected}  got ${actual}\n`);
+  }
+
   // `go` requires context (golang / go engineer) so it does not fire on the
   // English word, which shapes the text used below.
   await syncSource(SOURCE, async () => [
@@ -85,6 +97,97 @@ async function main() {
 
   await syncSource(SOURCE, async () => [job(null)]);
   await check("null description clears links", []);
+
+  process.stdout.write("\nvocabulary repair:\n");
+
+  // Rows for the repair cases, read back with exactly the fields matching
+  // hands to it.
+  const repairable = async () => {
+    const row = await prisma.opportunity.findUnique({
+      where: { source_externalId: { source: SOURCE, externalId: EXTERNAL_ID } },
+      select: { id: true, title: true, description: true, tags: true, vocabVersion: true },
+    });
+    if (!row) throw new Error("test opportunity missing");
+    return row;
+  };
+
+  const synced = await repairable();
+  await expect(
+    "sync stamps the current vocabulary version",
+    synced.vocabVersion === VOCABULARY_VERSION,
+    String(VOCABULARY_VERSION),
+    String(synced.vocabVersion),
+  );
+
+  // Pretend an older vocabulary derived this row's links: rewind the version
+  // and remove links the current vocabulary can see.
+  await prisma.opportunitySkill.deleteMany({
+    where: { opportunityId: synced.id, skillSlug: "rust" },
+  });
+  await prisma.opportunity.update({
+    where: { id: synced.id },
+    data: { vocabVersion: 0 },
+  });
+  await syncSource(SOURCE, async () => [
+    job("Rust and TypeScript, with some Kubernetes on the platform side."),
+  ]);
+  await prisma.opportunity.update({
+    where: { id: synced.id },
+    data: { vocabVersion: 0 },
+  });
+  await prisma.opportunitySkill.deleteMany({
+    where: { opportunityId: synced.id, skillSlug: "rust" },
+  });
+
+  const first = await repairVocabulary([synced.id]);
+  await expect("repair adds links an older vocabulary missed", first.linksAdded > 0, ">0", String(first.linksAdded));
+  await check("repaired links", ["kubernetes", "rust", "typescript"]);
+
+  const second = await repairVocabulary([synced.id]);
+  await expect("repair is idempotent", second.linksAdded === 0, "0", String(second.linksAdded));
+  await expect("repair stamped the version", (await repairable()).vocabVersion === VOCABULARY_VERSION, String(VOCABULARY_VERSION), String((await repairable()).vocabVersion));
+
+  // Insertion-only: a link the repair cannot justify must survive it.
+  await prisma.opportunitySkill.create({
+    data: { opportunityId: synced.id, skillSlug: "c++" },
+  });
+  await prisma.opportunity.update({ where: { id: synced.id }, data: { vocabVersion: 0 } });
+  await repairVocabulary([synced.id]);
+  await check("repair never deletes an existing link", ["c++", "kubernetes", "rust", "typescript"]);
+
+  // Tags are a real column now, so a repair can recover a tag-derived link
+  // instead of silently dropping it.
+  await syncSource(SOURCE, async () => [job("No skills named in the body at all.", ["Figma"])]);
+  const tagged = await repairable();
+  await expect("tags are persisted on the row", JSON.stringify(tagged.tags) === JSON.stringify(["Figma"]), '["Figma"]', JSON.stringify(tagged.tags));
+  await check("tag-derived link created by sync", ["figma"]);
+
+  await prisma.opportunitySkill.deleteMany({ where: { opportunityId: tagged.id } });
+  await prisma.opportunity.update({ where: { id: tagged.id }, data: { vocabVersion: 0 } });
+  await repairVocabulary([tagged.id]);
+  await check("repair recovers a link from the persisted tags", ["figma"]);
+
+  // Two requests repairing the same row at once must not collide on the
+  // (opportunityId, skillSlug) key.
+  await prisma.opportunitySkill.deleteMany({ where: { opportunityId: tagged.id } });
+  await prisma.opportunity.update({ where: { id: tagged.id }, data: { vocabVersion: 0 } });
+  let raced = false;
+  try {
+    await Promise.all([
+      repairVocabulary([tagged.id]),
+      repairVocabulary([tagged.id]),
+      repairVocabulary([tagged.id]),
+    ]);
+  } catch {
+    raced = true;
+  }
+  await expect("concurrent repairs do not collide", !raced, "no throw", raced ? "threw" : "clean");
+  await check("concurrent repairs converge on the right links", ["figma"]);
+
+  // An id that no longer exists must be a no-op rather than an error, since the
+  // caller hands over ids from a query that may already be out of date.
+  const ghost = await repairVocabulary(["does-not-exist"]);
+  await expect("unknown id is a no-op", ghost.scanned === 0 && ghost.linksAdded === 0, "0/0", `${ghost.scanned}/${ghost.linksAdded}`);
 
   process.stdout.write(failures === 0 ? "\nall cases pass\n" : `\n${failures} case(s) failed\n`);
   return failures;

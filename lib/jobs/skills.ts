@@ -16,6 +16,22 @@ type SkillEntry = {
   require?: RegExp;
 };
 
+/**
+ * Bump this whenever VOCABULARY changes in a way that could extract a skill the
+ * previous version missed: a new entry, a new alias, or a relaxed or added
+ * `require` guard.
+ *
+ * Each Opportunity records the version that produced its links, so the rows a
+ * change leaves stale become detectable. Sync stamps the current version on
+ * every write, so only postings that aged out of their feed before the bump
+ * still carry an old one. Matching repairs those lazily, on read, for the rows
+ * it actually served — see `repairVocabulary` in lib/jobs/vocab-repair.ts.
+ *
+ * Tightening a guard (making extraction narrower) does not strictly need a
+ * bump, because the repair only ever adds links and never deletes them.
+ */
+export const VOCABULARY_VERSION = 2;
+
 const VOCABULARY: SkillEntry[] = [
   { slug: "python", label: "Python" },
   { slug: "javascript", label: "JavaScript" },

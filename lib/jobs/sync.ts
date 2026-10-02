@@ -8,7 +8,7 @@ import {
   fetchRemotive,
 } from "./sources";
 import { SourceError, type NormalizedJob } from "./normalize";
-import { skillsForOpportunity } from "./skills";
+import { skillsForOpportunity, VOCABULARY_VERSION } from "./skills";
 
 type Fetcher = () => Promise<NormalizedJob[]>;
 
@@ -91,6 +91,8 @@ export async function syncSource(name: string, fetcher: Fetcher): Promise<SyncRe
         description: job.description,
         applyUrl: job.applyUrl,
         logoUrl: job.logoUrl,
+        tags: job.tags,
+        vocabVersion: VOCABULARY_VERSION,
         publishedAt: job.publishedAt,
         expiresAt: job.expiresAt,
         raw: job.raw ? (job.raw as object) : undefined,
@@ -109,6 +111,8 @@ export async function syncSource(name: string, fetcher: Fetcher): Promise<SyncRe
         description: job.description,
         applyUrl: job.applyUrl,
         logoUrl: job.logoUrl,
+        tags: job.tags,
+        vocabVersion: VOCABULARY_VERSION,
         publishedAt: job.publishedAt,
         expiresAt: job.expiresAt,
         raw: job.raw ? (job.raw as object) : undefined,

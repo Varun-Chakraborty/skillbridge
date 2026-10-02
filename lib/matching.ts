@@ -1,4 +1,8 @@
+import { after } from "next/server";
+
 import { prisma } from "@/lib/db";
+import { VOCABULARY_VERSION } from "@/lib/jobs/skills";
+import { repairVocabulary } from "@/lib/jobs/vocab-repair";
 
 export type ScoredOpportunity = {
   id: string;
@@ -110,6 +114,39 @@ function senioritySignal(title: string, kind: string): number {
   return 0;
 }
 
+/**
+ * Repairs postings whose skill links were derived by an older vocabulary,
+ * after the response has already been sent.
+ *
+ * The scan window is the only place staleness costs anything, because rows
+ * outside it are never scored. So the detection rides along with a query that
+ * was happening anyway, and the write goes behind the response: the request that
+ * first serves a stale row is scored against the links it already has, and the
+ * repair lands for whoever arrives next. That also keeps the work proportional
+ * to real usage instead of re-deriving the whole catalog on a timer.
+ *
+ * Each repair stamps the row with the current vocabulary version, which is what
+ * makes it self-limiting — a row is touched once per vocabulary change, ever.
+ */
+function scheduleVocabularyRepair(ids: string[]): void {
+  if (ids.length === 0) return;
+
+  try {
+    after(async () => {
+      try {
+        await repairVocabulary(ids);
+      } catch (error) {
+        console.error("skillbridge: vocabulary repair failed", error);
+      }
+    });
+  } catch (error) {
+    // `after` needs a request scope, and this module is also importable from
+    // plain scripts. A repair that cannot be scheduled is not a failure worth
+    // propagating: the links are unchanged and the next sync re-derives them.
+    console.error("skillbridge: could not schedule vocabulary repair", error);
+  }
+}
+
 export async function rankOpportunitiesForUser(
   userId: string,
   { limit = 50, kinds }: { limit?: number; kinds?: string[] } = {},
@@ -139,8 +176,17 @@ export async function rankOpportunitiesForUser(
       remote: true,
       publishedAt: true,
       matches: { select: { skillSlug: true } },
+      // Cheap, and only used to decide whether the repair below has anything
+      // to do. The description is deliberately *not* selected here: it would add
+      // megabytes to every dashboard load, and the repair loads text for the
+      // stale rows only.
+      vocabVersion: true,
     },
   });
+
+  scheduleVocabularyRepair(
+    opportunities.filter((o) => o.vocabVersion !== VOCABULARY_VERSION).map((o) => o.id),
+  );
 
   return opportunities
     .map((opportunity): ScoredOpportunity => {

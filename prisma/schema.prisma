@@ -166,6 +166,17 @@ model Opportunity {
 
   raw Json?
 
+  /// Tags exactly as the source published them. Persisted as a column rather
+  /// than left inside `raw` because skill extraction folds tags into the result,
+  /// and re-deriving links later needs them without re-parsing six different
+  /// payload shapes.
+  tags String[] @default([])
+
+  /// Which version of the skill vocabulary produced this row's links. Sync
+  /// stamps the current version on every write, so a stale value means the row
+  /// aged out of its feed before a vocabulary change and was never re-derived.
+  vocabVersion Int @default(0)
+
   publishedAt DateTime?
   expiresAt   DateTime?
   fetchedAt   DateTime  @default(now())
@@ -177,6 +188,7 @@ model Opportunity {
   @@unique([source, externalId])
   @@index([kind])
   @@index([publishedAt])
+  @@index([vocabVersion])
 }
 
 model OpportunitySkill {

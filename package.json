@@ -12,6 +12,7 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "jobs:sync": "tsx scripts/sync-jobs.ts",
+    "jobs:verify-links": "tsx scripts/verify-link-drift.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

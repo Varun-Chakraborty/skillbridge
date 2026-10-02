@@ -117,14 +117,28 @@ export async function syncSource(name: string, fetcher: Fetcher): Promise<SyncRe
       select: { id: true },
     });
 
-    if (skills.length) {
-      await prisma.$transaction([
-        prisma.opportunitySkill.deleteMany({ where: { opportunityId: opportunity.id } }),
-        prisma.opportunitySkill.createMany({
-          data: skills.map((skill) => ({ opportunityId: opportunity.id, skillSlug: skill.slug })),
-        }),
-      ]);
-    }
+    // Replacing the links is unconditional in the delete direction. A posting
+    // that stops mentioning a skill has to stop matching on it, and guarding
+    // this on `skills.length` skipped the delete whenever the new set came back
+    // empty — which left the previous links in place, so a re-fetched posting
+    // could keep scoring on skills its description no longer contained.
+    //
+    // The create is still conditional, since there is no point issuing an empty
+    // insert, and the two stay in one transaction so a reader never observes a
+    // posting with no links between the delete and the insert.
+    await prisma.$transaction([
+      prisma.opportunitySkill.deleteMany({ where: { opportunityId: opportunity.id } }),
+      ...(skills.length
+        ? [
+            prisma.opportunitySkill.createMany({
+              data: skills.map((skill) => ({
+                opportunityId: opportunity.id,
+                skillSlug: skill.slug,
+              })),
+            }),
+          ]
+        : []),
+    ]);
     written += 1;
   }
 

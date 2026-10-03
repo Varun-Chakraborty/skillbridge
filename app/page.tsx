@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
+import ThemeToggle from "@/components/theme-toggle";
 
 import hackathonImage from "@/assets/hacknorth-team.jpg";
 import designSprintImage from "@/assets/design-sprint.jpg";
@@ -65,7 +66,7 @@ const opportunityKinds = [
     tags: ["Figma", "UX", "Prototyping"],
     image: designSprintImage,
     alt: "Student sketching mobile wireframes",
-    tone: "bg-warning text-foreground",
+    tone: "bg-warning text-warning-foreground",
   },
 ];
 
@@ -130,6 +131,7 @@ export default function Home() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <ThemeToggle />
             <Link
               href="/dashboard"
               className={buttonVariants({ variant: "outline", size: "sm" })}
@@ -206,7 +208,7 @@ export default function Home() {
                 <div className="rounded-3xl bg-feature p-5 text-feature-foreground shadow-studio">
                   <CalendarClock className="size-5" />
                   <p className="mt-8 font-display text-2xl font-bold">One weekly digest</p>
-                  <p className="mt-2 text-sm opacity-80">
+                  <p className="mt-2 text-sm">
                     New matches and closing deadlines, summarised. No daily noise.
                   </p>
                 </div>

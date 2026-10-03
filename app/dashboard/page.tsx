@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { signOutAction } from "@/app/dashboard/actions";
 import SkillsEditor from "@/app/dashboard/skills-editor";
 import { buttonVariants } from "@/components/ui/button";
+import ThemeToggle from "@/components/theme-toggle";
 import { getSessionUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { findComplementaryStudents, rankOpportunitiesForUser } from "@/lib/matching";
@@ -144,6 +145,7 @@ export default async function DashboardPage({
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
             <div className="flex items-center gap-2 rounded-full border-2 border-border bg-card py-1.5 pl-2 pr-4">
               <span className="grid size-8 place-items-center rounded-full bg-feature text-sm font-bold text-feature-foreground">
                 {initials(user.name)}
@@ -198,11 +200,11 @@ export default async function DashboardPage({
 
           <div className="lg:col-span-5">
             <div className="rounded-3xl bg-feature p-6 text-feature-foreground shadow-studio">
-              <p className="text-xs font-semibold uppercase opacity-70">Strongest match</p>
+              <p className="text-xs font-semibold uppercase">Strongest match</p>
               {topMatch ? (
                 <>
                   <h2 className="mt-2 font-display text-2xl font-bold">{topMatch.title}</h2>
-                  <p className="mt-1 text-sm opacity-80">
+                  <p className="mt-1 text-sm">
                     {topMatch.score}% skill coverage
                     {topMatch.location ? ` · ${topMatch.location}` : ""}
                   </p>
@@ -222,7 +224,7 @@ export default async function DashboardPage({
               ) : (
                 <>
                   <h2 className="mt-2 font-display text-2xl font-bold">Nothing scored yet</h2>
-                  <p className="mt-1 text-sm opacity-80">
+                  <p className="mt-1 text-sm">
                     Add your resume and we will read your skills out of it, then rank every
                     listing against them.
                   </p>

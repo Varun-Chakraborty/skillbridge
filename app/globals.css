@@ -2,7 +2,9 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* Matches the .dark root itself as well as its descendants, so a dark: utility
+   can sit on <html> or <body> and not only on elements nested inside. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --font-display: var(--font-space-grotesk), sans-serif;
@@ -50,12 +52,16 @@
   --color-feature: var(--feature);
   --color-feature-foreground: var(--feature-foreground);
   --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
 }
 
 :root {
   --radius: 1rem;
+  --shadow-hard: var(--foreground);
   --background: oklch(0.973 0.023 78);
   --foreground: oklch(0.205 0.038 313);
   --card: oklch(1 0 0);
@@ -78,8 +84,11 @@
   --feature: oklch(0.57 0.235 289);
   --feature-foreground: oklch(0.973 0.023 78);
   --success: oklch(0.71 0.145 181);
+  --success-foreground: oklch(0.205 0.038 313);
   --warning: oklch(0.84 0.158 85);
+  --warning-foreground: oklch(0.205 0.038 313);
   --highlight: oklch(0.72 0.16 353);
+  --highlight-foreground: oklch(0.205 0.038 313);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -95,39 +104,67 @@
   --sidebar-ring: oklch(0.704 0.04 256.788);
 }
 
+/* The dark palette is the same design language inverted, not the stock shadcn
+   blue-grey: warm plum ink, coral kept as the primary so the brand does not
+   wash out, and the accent hues lifted so they stay legible on a dark ground.
+
+   Every colour token in :root is redefined here except --radius, which is not a
+   colour. That completeness is the point: the previous dark block was the
+   stock shadcn one, which defined no --feature, --success, --warning or
+   --highlight at all, so anything using them silently inherited the light
+   values and rendered brand colours from a theme that had gone dark. A token
+   missing from one theme is not a fallback, it is a bug that only shows up in
+   the theme nobody tests by hand. */
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  color-scheme: dark;
+  --background: oklch(0.19 0.028 305);
+  --foreground: oklch(0.96 0.014 78);
+  --card: oklch(0.235 0.03 305);
+  --card-foreground: oklch(0.96 0.014 78);
+  --popover: oklch(0.235 0.03 305);
+  --popover-foreground: oklch(0.96 0.014 78);
+  --primary: oklch(0.72 0.175 32);
+  --primary-foreground: oklch(0.17 0.028 305);
+  --secondary: oklch(0.31 0.052 300);
+  --secondary-foreground: oklch(0.96 0.014 78);
+  --muted: oklch(0.275 0.028 305);
+  --muted-foreground: oklch(0.735 0.025 300);
+  --accent: oklch(0.72 0.115 181);
+  --accent-foreground: oklch(0.16 0.03 305);
+  --destructive: oklch(0.655 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 78);
+  --border: oklch(0.96 0.014 78 / 14%);
+  --input: oklch(0.96 0.014 78 / 18%);
+  --ring: oklch(0.72 0.175 32);
+  /* Ink, not paper. The brand hues sit high in lightness in dark mode so they
+     read as accents against the ink background, which means anything filled with
+     them has to carry dark text -- the opposite of the light theme, where
+     --feature is deep enough for near-white text. Same rule as the coral
+     primary above: a light surface takes dark ink. */
+  --feature: oklch(0.68 0.185 289);
+  --feature-foreground: oklch(0.19 0.03 78);
+  --success: oklch(0.75 0.13 181);
+  --success-foreground: oklch(0.19 0.03 78);
+  --warning: oklch(0.85 0.14 85);
+  --warning-foreground: oklch(0.19 0.03 78);
+  --highlight: oklch(0.76 0.145 353);
+  --highlight-foreground: oklch(0.19 0.03 78);
+  --chart-1: oklch(0.72 0.175 32);
+  --chart-2: oklch(0.72 0.115 181);
+  --chart-3: oklch(0.68 0.185 289);
+  --chart-4: oklch(0.85 0.14 85);
+  --chart-5: oklch(0.76 0.145 353);
+  --sidebar: oklch(0.235 0.03 305);
+  --sidebar-foreground: oklch(0.96 0.014 78);
+  --sidebar-primary: oklch(0.68 0.185 289);
+  --sidebar-primary-foreground: oklch(0.98 0.01 78);
+  --sidebar-accent: oklch(0.31 0.052 300);
+  --sidebar-accent-foreground: oklch(0.96 0.014 78);
+  --sidebar-border: oklch(0.96 0.014 78 / 14%);
+  --sidebar-ring: oklch(0.72 0.175 32);
+  /* A hard offset shadow tinted by the foreground reads as a bright glow on a
+     dark ground, so it gets its own near-black token instead. */
+  --shadow-hard: oklch(0.07 0.02 300);
 }
 
 @layer base {
@@ -150,7 +187,7 @@
 }
 
 @utility shadow-studio {
-  box-shadow: 6px 6px 0 var(--color-foreground);
+  box-shadow: 6px 6px 0 var(--shadow-hard);
 }
 
 @utility card-rise {
@@ -159,7 +196,7 @@
     box-shadow 180ms ease;
   &:hover {
     transform: translateY(-3px);
-    box-shadow: 0 12px 0 color-mix(in oklab, var(--color-foreground) 8%, transparent);
+    box-shadow: 0 12px 0 color-mix(in oklab, var(--shadow-hard) 8%, transparent);
   }
 }
 

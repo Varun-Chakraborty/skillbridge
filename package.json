@@ -16,7 +16,9 @@
     "postinstall": "prisma generate",
     "jobs:sources": "tsx scripts/source-config.ts",
     "jobs:check-budget": "tsx scripts/check-budget-allocation.ts",
-    "jobs:check-ttl": "tsx scripts/check-ttl-sweep.ts"
+    "jobs:check-ttl": "tsx scripts/check-ttl-sweep.ts",
+    "jobs:check-encoding": "tsx scripts/check-encoding.ts",
+    "jobs:repair-encoding": "tsx scripts/repair-encoding.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

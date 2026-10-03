@@ -10,6 +10,7 @@ import {
 import { SourceError, type NormalizedJob } from "./normalize";
 import { skillsForOpportunity, VOCABULARY_VERSION } from "./skills";
 import { allocateBudget, compareWithinSource, isEntryLevel } from "./relevance";
+import { repairMojibake } from "./encoding";
 import { loadSourceConfigs, type SourceConfig } from "./source-registry";
 import { sweepExpired } from "./ttl";
 
@@ -92,6 +93,31 @@ export async function syncSource(
 }
 
 /**
+ * Repair upstream text on its way to storage and to skill extraction.
+ *
+ * Applied centrally rather than per-fetcher so that a new source is covered the
+ * moment it is added, and so the link-drift harness gets it for free through
+ * `syncSource`. URLs are deliberately excluded: `applyUrl` and `logoUrl` are
+ * consumed as addresses, and a repair that altered one would break the link
+ * rather than fix it.
+ *
+ * This runs before `skillsForOpportunity` rather than after, because extraction
+ * matches vocabulary against the description — a skill name that arrived as
+ * `React` would otherwise be matched against correctly-encoded text and quietly
+ * produce no link.
+ */
+function repairText(job: NormalizedJob): NormalizedJob {
+  return {
+    ...job,
+    title: repairMojibake(job.title),
+    company: job.company === null ? null : repairMojibake(job.company),
+    location: job.location === null ? null : repairMojibake(job.location),
+    description: job.description === null ? null : repairMojibake(job.description),
+    tags: job.tags.map(repairMojibake),
+  };
+}
+
+/**
  * Persist a source's postings and rebuild their skill links.
  *
  * `ttlDays` is materialized onto each row as `ttlExpiresAt`, measured from the
@@ -109,7 +135,8 @@ async function writeJobs(source: string, jobs: NormalizedJob[], ttlDays: number)
   const fetchedAt = new Date();
   const ttlExpiresAt = new Date(fetchedAt.getTime() + ttlDays * 24 * 60 * 60 * 1000);
 
-  const extracted = jobs.map((job) => skillsForOpportunity(job));
+  const repaired = jobs.map(repairText);
+  const extracted = repaired.map((job) => skillsForOpportunity(job));
   const labelBySlug = new Map<string, string>();
   for (const skills of extracted) {
     for (const skill of skills) labelBySlug.set(skill.slug, skill.label);
@@ -122,7 +149,7 @@ async function writeJobs(source: string, jobs: NormalizedJob[], ttlDays: number)
   }
 
   let written = 0;
-  for (const [index, job] of jobs.entries()) {
+  for (const [index, job] of repaired.entries()) {
     const skills = extracted[index]!;
     const opportunity = await prisma.opportunity.upsert({
       where: { source_externalId: { source: job.source, externalId: job.externalId } },

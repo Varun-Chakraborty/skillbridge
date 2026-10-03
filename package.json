@@ -13,7 +13,10 @@
     "db:studio": "prisma studio",
     "jobs:sync": "tsx scripts/sync-jobs.ts",
     "jobs:verify-links": "tsx scripts/verify-link-drift.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "jobs:sources": "tsx scripts/source-config.ts",
+    "jobs:check-budget": "tsx scripts/check-budget-allocation.ts",
+    "jobs:check-ttl": "tsx scripts/check-ttl-sweep.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

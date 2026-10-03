@@ -164,12 +164,10 @@ model Opportunity {
   applyUrl       String?
   logoUrl        String?
 
-  raw Json?
-
   /// Tags exactly as the source published them. Persisted as a column rather
-  /// than left inside `raw` because skill extraction folds tags into the result,
-  /// and re-deriving links later needs them without re-parsing six different
-  /// payload shapes.
+  /// than left inside the upstream payload because skill extraction folds tags
+  /// into the result, and re-deriving links later needs them without re-parsing
+  /// six different payload shapes.
   tags String[] @default([])
 
   /// Which version of the skill vocabulary produced this row's links. Sync
@@ -181,6 +179,16 @@ model Opportunity {
   expiresAt   DateTime?
   fetchedAt   DateTime  @default(now())
 
+  /// When this row becomes eligible for deletion, materialized by sync from the
+  /// owning source's `ttlDays` at write time rather than resolved through a join
+  /// at sweep time. Two reasons: the sweeper becomes a single indexed range scan
+  /// instead of a join across every source, and a row carries the policy it was
+  /// written under, so changing a source's TTL does not retroactively apply to
+  /// rows that have not been re-fetched since.
+  ///
+  /// No source publishes a closing date, so this is derived, not upstream truth.
+  ttlExpiresAt DateTime?
+
   bookmarks    Bookmark[]
   applications Application[]
   matches      OpportunitySkill[]
@@ -189,6 +197,59 @@ model Opportunity {
   @@index([kind])
   @@index([publishedAt])
   @@index([vocabVersion])
+  @@index([ttlExpiresAt])
+}
+
+enum IngestSourceKind {
+  /// A single company's public ATS board, addressed by its board token.
+  ATS
+  /// A multi-company aggregator feed.
+  AGGREGATOR
+}
+
+/// The ingestion registry. Every source sync reads from this table, including
+/// which ATS board tokens exist, so adding a company no longer means editing a
+/// comma-separated secret in two places (GitHub Actions and Vercel).
+///
+/// Deliberately distinct from `Opportunity.source`, which is a free-form string
+/// tag like `greenhouse:stripe` kept on the row for cheap grouping. This table
+/// is the policy: share, retention and selection rules per source.
+model IngestSource {
+  id String @id @default(cuid())
+
+  /// Matches `Opportunity.source` for this source, e.g. `arbeitnow`,
+  /// `greenhouse:stripe`. Unique, and the join key between the two.
+  key   String           @unique
+  kind  IngestSourceKind
+  label String?
+
+  /// Board token for ATS sources (`greenhouse:stripe` -> `stripe`). Public: it
+  /// appears in the company's own job board URL, so it is configuration rather
+  /// than a secret.
+  boardToken String?
+
+  enabled Boolean @default(true)
+
+  /// Relative share of the per-sync row budget. Every enabled source starts
+  /// equal at 100, so a six-source registry ingests six roughly equal slices.
+  /// Raising one source's weight and lowering another's shifts capacity toward
+  /// the one that is performing; weight is a ratio, not a percentage.
+  weight Int @default(100)
+
+  /// Hard retention in days, materialized onto each row as `ttlExpiresAt`.
+  ttlDays Int @default(30)
+
+  /// When set, only entry-level postings from this source are ingested and the
+  /// rest are dropped. Per-source rather than global because the aggregators
+  /// are dominated by senior roles that a student hub has no use for, while the
+  /// ATS boards are not.
+  entryLevelOnly Boolean @default(false)
+
+  note      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([enabled])
 }
 
 model OpportunitySkill {

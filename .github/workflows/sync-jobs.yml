@@ -53,7 +53,11 @@ jobs:
       - name: Sync job listings
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # Optional ATS boards. Kept as a secret because it is configuration you
-          # are likely to change without wanting a code change each time.
+          # Bootstrap only: copied into the IngestSource registry on the first run
+          # against an empty registry and ignored afterwards. Sources, shares and
+          # retention now live in that table, tuned with `npm run jobs:sources`.
           ATS_SOURCES: ${{ secrets.ATS_SOURCES }}
+          # Optional repo variable, not a secret. Unset falls back to the default
+          # in sync.ts, and an empty string is treated as unset.
+          SYNC_ROW_BUDGET: ${{ vars.SYNC_ROW_BUDGET }}
         run: npm run jobs:sync

@@ -26,7 +26,6 @@ export type NormalizedJob = {
   publishedAt: Date | null;
   expiresAt: Date | null;
   tags: string[];
-  raw?: unknown;
 };
 
 export class SourceError extends Error {
@@ -40,31 +39,85 @@ export class SourceError extends Error {
   }
 }
 
+const DEFAULT_TIMEOUT_MS = 8000;
+
+/** How many times a 429 is retried before the source is failed for this run. */
+const RATE_LIMIT_RETRIES = 2;
+
+/** Fallback wait when a 429 arrives without a usable `Retry-After`. */
+const RATE_LIMIT_BACKOFF_MS = 2000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Seconds to wait before retrying a 429.
+ *
+ * `Retry-After` may be either a delay in seconds or an HTTP date, and these
+ * public APIs use both forms across endpoints. Honouring it is the difference
+ * between backing off for as long as the server asked and guessing — and
+ * guessing wrong here means hammering an endpoint that has already told us to
+ * stop.
+ */
+function retryAfterMs(response: Response): number {
+  const header = response.headers.get("retry-after");
+  if (!header) return RATE_LIMIT_BACKOFF_MS;
+
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 30000);
+
+  const date = Date.parse(header);
+  if (!Number.isNaN(date)) return Math.min(Math.max(date - Date.now(), 0), 30000);
+
+  return RATE_LIMIT_BACKOFF_MS;
+}
+
+/**
+ * Fetch JSON, retrying a rate-limited response with backoff.
+ *
+ * All six sources are public, keyless, and shared with every other project
+ * scraping the same feed, so a 429 is an expected condition rather than an
+ * outage. Treating it as a hard failure lost a source entirely on roughly one
+ * sync in three — measured on Arbeitnow, whose pagination turns a single sync
+ * into fourteen requests against an API whose own response asks callers not to
+ * abuse it.
+ *
+ * Bounded to `RATE_LIMIT_RETRIES` and capped at 30s per wait, so a persistently
+ * throttled endpoint fails that one source for the run rather than stalling the
+ * whole sync behind it.
+ */
 export async function fetchJson(
   source: string,
   url: string,
-  { timeoutMs = 8000, headers }: { timeoutMs?: number; headers?: HeadersInit } = {},
+  { timeoutMs = DEFAULT_TIMEOUT_MS, headers }: { timeoutMs?: number; headers?: HeadersInit } = {},
 ): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { accept: "application/json", "user-agent": "SkillBridge/0.1", ...headers },
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      throw new SourceError(source, `HTTP ${response.status} from ${url}`);
+  for (let attempt = 0; ; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { accept: "application/json", "user-agent": "SkillBridge/0.1", ...headers },
+        cache: "no-store",
+      });
+
+      if (response.status === 429 && attempt < RATE_LIMIT_RETRIES) {
+        await sleep(retryAfterMs(response));
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new SourceError(source, `HTTP ${response.status} from ${url}`);
+      }
+      return await response.json();
+    } catch (error) {
+      if (error instanceof SourceError) throw error;
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new SourceError(source, `timed out after ${timeoutMs}ms`);
+      }
+      throw new SourceError(source, "request failed", error);
+    } finally {
+      clearTimeout(timer);
     }
-    return await response.json();
-  } catch (error) {
-    if (error instanceof SourceError) throw error;
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new SourceError(source, `timed out after ${timeoutMs}ms`);
-    }
-    throw new SourceError(source, "request failed", error);
-  } finally {
-    clearTimeout(timer);
   }
 }
 

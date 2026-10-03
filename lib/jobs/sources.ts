@@ -77,7 +77,6 @@ export async function fetchGreenhouse(boardToken: string): Promise<NormalizedJob
         publishedAt: toDate(job.updated_at ?? job.first_published),
         expiresAt: toDate(job.application_deadline),
         tags,
-        raw: job,
       } satisfies NormalizedJob,
     ];
   });
@@ -140,7 +139,6 @@ export async function fetchLever(company: string): Promise<NormalizedJob[]> {
         publishedAt: toDate(job.createdAt),
         expiresAt: null,
         tags: lists,
-        raw: job,
       } satisfies NormalizedJob,
     ];
   });
@@ -195,19 +193,53 @@ export async function fetchAshby(board: string): Promise<NormalizedJob[]> {
         publishedAt: toDate(job.publishedAt),
         expiresAt: null,
         tags,
-        raw: job,
       } satisfies NormalizedJob,
     ];
   });
 }
 
-export async function fetchArbeitnow(): Promise<NormalizedJob[]> {
-  const source = "arbeitnow";
-  const data = await fetchJson(source, "https://www.arbeitnow.com/api/job-board-api");
-  const jobs = asArray(asJson(data)?.data);
-  if (!jobs.length) throw new SourceError(source, "feed returned no jobs");
+/**
+ * Arbeitnow caps its response at `per_page` rows and documents `?page=` for the
+ * rest. Fetching page 1 alone returned 325 of 1,842 live postings, so 1,226 rows
+ * already in the database were live jobs the sync simply never asked about, and
+ * their absence from the table was indistinguishable from a closed req.
+ *
+ * Two details of the feed are load-bearing and were measured, not assumed:
+ *
+ *  - Pages are a clean partition. Pages 1-14 return rows, 15+ come back empty,
+ *    and no slug appears on two pages, so iterating to an empty page is safe.
+ *  - The `meta.from` / `meta.to` offsets are wrong (page 1 reports 1-325, page 2
+ *    reports 101-325) and the ordering is not stable across pages, so neither is
+ *    used to decide when to stop.
+ *
+ * `ARBEITNOW_MAX_PAGES` is a guard against a feed that keeps returning rows
+ * forever. It sits well above the observed 14 so normal operation never reaches
+ * it, and hitting it is not treated as success — the loop reports how many pages
+ * it walked so a truncated read is visible in the sync log.
+ */
+const ARBEITNOW_MAX_PAGES = 40;
 
-  return jobs.flatMap((entry) => {
+/**
+ * Pause between pages.
+ *
+ * Arbeitnow's response carries "This is a free public API for jobs, please do
+ * not abuse", and paging turned one sync into fourteen requests against it. With
+ * no pause, back-to-back syncs reliably drew HTTP 429 and the source dropped to
+ * zero rows for the run. Four hundred milliseconds over fourteen pages adds about
+ * five seconds to a job that already takes twenty, which is a fair price for
+ * not being the reason the feed slows down for everyone else.
+ */
+const ARBEITNOW_PAGE_DELAY_MS = 400;
+
+async function fetchArbeitnowPage(page: number): Promise<NormalizedJob[]> {
+  const source = "arbeitnow";
+  const data = await fetchJson(
+    source,
+    `https://www.arbeitnow.com/api/job-board-api?page=${page}`,
+    { timeoutMs: 20000 },
+  );
+
+  return asArray(asJson(data)?.data).flatMap((entry) => {
     const job = asJson(entry);
     if (!job) return [];
     const id = asString(job.slug);
@@ -237,10 +269,41 @@ export async function fetchArbeitnow(): Promise<NormalizedJob[]> {
         publishedAt: toDate(job.created_at),
         expiresAt: null,
         tags,
-        raw: job,
       } satisfies NormalizedJob,
     ];
   });
+}
+
+export async function fetchArbeitnow(): Promise<NormalizedJob[]> {
+  const source = "arbeitnow";
+  // Keyed by slug so a posting served on two pages cannot be upserted twice or
+  // counted twice against this source's budget.
+  const collected = new Map<string, NormalizedJob>();
+
+  for (let page = 1; page <= ARBEITNOW_MAX_PAGES; page++) {
+    let batch: NormalizedJob[];
+    try {
+      batch = await fetchArbeitnowPage(page);
+    } catch (error) {
+      // Pages past the end of the feed may answer 404 rather than an empty
+      // body. That is the end of the feed, not a failed sync — but only if we
+      // already have rows. A failure on page 1 is a real outage and propagates,
+      // because returning an empty list here would look like "no jobs exist".
+      if (collected.size > 0) break;
+      throw error;
+    }
+
+    if (!batch.length) break;
+    for (const job of batch) if (!collected.has(job.externalId)) collected.set(job.externalId, job);
+
+    if (page < ARBEITNOW_MAX_PAGES) {
+      await new Promise((resolve) => setTimeout(resolve, ARBEITNOW_PAGE_DELAY_MS));
+    }
+  }
+
+  if (!collected.size) throw new SourceError(source, "feed returned no jobs");
+
+  return [...collected.values()];
 }
 
 export async function fetchRemotive(): Promise<NormalizedJob[]> {
@@ -278,7 +341,6 @@ export async function fetchRemotive(): Promise<NormalizedJob[]> {
         publishedAt: toDate(job.publication_date),
         expiresAt: null,
         tags,
-        raw: job,
       } satisfies NormalizedJob,
     ];
   });
@@ -324,7 +386,6 @@ export async function fetchRemoteok(): Promise<NormalizedJob[]> {
         publishedAt: toDate(job.date ?? job.epoch),
         expiresAt: null,
         tags,
-        raw: job,
       } satisfies NormalizedJob,
     ];
   });

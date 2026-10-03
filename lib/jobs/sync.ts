@@ -139,6 +139,13 @@ export async function syncSource(name: string, fetcher: Fetcher): Promise<SyncRe
                 opportunityId: opportunity.id,
                 skillSlug: skill.slug,
               })),
+              // Two syncs can overlap now that the workflow's concurrency group
+              // is scoped per ref: a branch dispatch and a scheduled run may both
+              // be writing. A delete takes no lock on rows that do not exist yet,
+              // so both can clear the table for a posting and then race to
+              // reinsert the same keys. Skipping duplicates makes the outcome
+              // the same set of links either way.
+              skipDuplicates: true,
             }),
           ]
         : []),

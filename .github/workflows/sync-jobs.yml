@@ -11,9 +11,17 @@ on:
   workflow_dispatch:
 
 # GitHub cancels a run if a new one starts for the same ref, so an overrun cannot
-# stack syncs.
+# stack syncs. The group is per ref on purpose: under one shared group a manual
+# dispatch was cancelled by the next scheduled run, which is exactly when you
+# least want it — a dispatched run is usually a recovery or a debug of a source
+# you are actively changing.
+#
+# Scoping per ref means a branch dispatch can now overlap a scheduled run on
+# main, with both writing the same tables. Sync tolerates that: the skill-link
+# insert uses skipDuplicates, so concurrent runs cannot collide on the
+# (opportunityId, skillSlug) key.
 concurrency:
-  group: sync-jobs
+  group: sync-jobs-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -25,9 +33,9 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

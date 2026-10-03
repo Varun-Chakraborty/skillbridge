@@ -2,7 +2,7 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
 
-const buttonVariants = cva(
+const buttonVariantsBase = cva(
   "inline-flex shrink-0 items-center justify-center gap-2 font-bold transition-[transform,background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:translate-y-px",
   {
     variants: {
@@ -26,16 +26,42 @@ const buttonVariants = cva(
   },
 );
 
+/**
+ * Merges the override classes through tailwind-merge before returning.
+ *
+ * cva only concatenates, so a caller passing `className` to override the variant
+ * ends up with both sets in the attribute -- `bg-card text-card-foreground` from
+ * outline *and* the `bg-transparent text-background` meant to replace it. Which
+ * one paints is then decided by stylesheet order, not by anything the caller
+ * declared, and that flips between the light and dark builds. Merging here keeps
+ * the guarantee at the one place every call site already goes through.
+ */
+function buttonVariants({
+  className,
+  variant,
+  size,
+}: VariantProps<typeof buttonVariantsBase> & { className?: string } = {}): string {
+  return cn(buttonVariantsBase({ variant, size, className }));
+}
+
 function Button({
   className,
   variant,
   size,
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonPrimitive.Props & VariantProps<typeof buttonVariantsBase>) {
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      // base-ui allows className to be a state function, so the variant classes
+      // have to be merged inside it rather than alongside it.
+      className={(state) =>
+        buttonVariants({
+          variant,
+          size,
+          className: typeof className === "function" ? className(state) : className,
+        })
+      }
       {...props}
     />
   );

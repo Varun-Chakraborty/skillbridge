@@ -132,6 +132,24 @@ const cases: Case[] = [
     why: "working-student contract in Germany",
   },
   {
+    name: "Pflichtpraktikum, a compound with no word boundary",
+    title: "Pflichtpraktikum Online Marketing Manager (m/w/d)",
+    expect: true,
+    why: "German compounds concatenate nouns, so \\bpraktikum\\b cannot match; this was hiding 10 production rows",
+  },
+  {
+    name: "Werkstudenten, the plural",
+    title: "Werkstudenten (m/w/d)",
+    expect: true,
+    why: "the plural compounds the same way",
+  },
+  {
+    name: "Werkstudentenstelle, a further derivative",
+    title: "TikTok Content Creator & Video Editor (m/w/d), Werkstudentenstelle",
+    expect: true,
+    why: "and so does the -stelle form, with the student role only in the tag half of the title",
+  },
+  {
     name: "Portuguese estagi",
     title: "Estagio Marketing",
     expect: true,

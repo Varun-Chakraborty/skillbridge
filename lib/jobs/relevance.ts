@@ -27,8 +27,24 @@ import type { NormalizedJob } from "./normalize";
  * `working student` (British and Dutch boards). Those postings are real student
  * work that the obvious spelling misses.
  */
+/**
+ * German terms, matched without word boundaries.
+ *
+ * German compounds concatenate nouns, so "Pflichtpraktikum" (compulsory
+ * internship), "Werkstudenten" (plural) and "Werkstudentenstelle" are the same
+ * posting as the standalone word — and a `\b` cannot express that, since there
+ * is no boundary inside "Pflichtpraktikum". Measured against production, the
+ * boundary was hiding 10 rows that were unambiguously student work.
+ *
+ * Safe to leave unbounded because no word containing these three means anything
+ * but student work. Every other term in the vocabulary keeps its boundaries,
+ * because that is what stops "International" reading as "intern" and "Gradient"
+ * as "grad".
+ */
+const GERMAN_PATTERN = /praktikum|praktika|werkstudent/;
+
 const ENTRY_LEVEL_PATTERN =
-  /\b(intern|interns|internship|internships|fellow|fellows|fellowship|fellowships|co[\s-]?op|praktikum|praktika|werkstudent|working[\s-]?student|trainee|traineeship|estagi|estagio|stagiaire|stage|placement|junior|entry[\s-]?level|graduate|new[\s-]?grad|grad|associate|apprentice|apprenticeship)\b/i;
+  /\b(intern|interns|internship|internships|fellow|fellows|fellowship|fellowships|co[\s-]?op|working[\s-]?student|trainee|traineeship|estagi|estagio|stagiaire|stage|placement|junior|entry[\s-]?level|graduate|new[\s-]?grad|grad|associate|apprentice|apprenticeship)\b|praktikum|praktika|werkstudent/i;
 
 /**
  * Words that name a student programme outright.
@@ -50,7 +66,7 @@ const ENTRY_LEVEL_PATTERN =
  * that call, and it is three rows against the internships it protects.
  */
 const STUDENT_PROGRAM_PATTERN =
-  /\b(intern|interns|internship|internships|fellow|fellows|fellowship|fellowships|co[\s-]?op|praktikum|praktika|werkstudent|working[\s-]?student|trainee|traineeship|estagi|estagio|stagiaire|stage|apprentice|apprenticeship|junior|new[\s-]?grad(?:uate)?)\b/i;
+  /\b(intern|interns|internship|internships|fellow|fellows|fellowship|fellowships|co[\s-]?op|working[\s-]?student|trainee|traineeship|estagi|estagio|stagiaire|stage|apprentice|apprenticeship|junior|new[\s-]?grad(?:uate)?)\b|praktikum|praktika|werkstudent/i;
 
 /**
  * Words that veto the match above.

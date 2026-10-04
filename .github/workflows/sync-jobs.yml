@@ -1,36 +1,49 @@
 name: Sync job listings
 
-# Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC. GitHub schedules this on the
-# default branch and may delay the start by a few minutes under load, which is
-# fine for a refresh job.
+# Two jobs with deliberately different triggers, which is why they are separate
+# jobs on one workflow rather than two workflows:
+#
+#   migrate  follows the commit that changed the schema. It runs on every push
+#            to main and is a no-op when nothing is pending, so it costs a few
+#            seconds of database time and nothing else.
+#   sync     follows the clock. The data does not change because code changed, so
+#            a push must not trigger it — a full re-fetch of six upstreams on
+#            every commit is pure load on endpoints shared with everyone else.
+#
+# Before this split, one job did both on one trigger, so the migration waited on
+# a 6-hourly cron while the code depending on it was already live. That is not
+# hypothetical: it left /api/jobs/sync returning 500 for want of a table.
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "0 */6 * * *"
-  # Also runnable by hand from the Actions tab, which is how you recover after
-  # adding a new ATS board or debugging a source.
   workflow_dispatch:
+  # Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC. GitHub schedules this on the
+  # default branch and may delay the start by several minutes under load, which
+  # is fine for a refresh job and is why nothing downstream depends on it
+  # starting promptly.
 
-# GitHub cancels a run if a new one starts for the same ref, so an overrun cannot
-# stack syncs. The group is per ref on purpose: under one shared group a manual
-# dispatch was cancelled by the next scheduled run, which is exactly when you
-# least want it — a dispatched run is usually a recovery or a debug of a source
-# you are actively changing.
+# Migrations and syncs are kept in separate concurrency groups so neither can
+# cancel the other. A push landing mid-sync would otherwise cancel a run that is
+# halfway through writing, and a sync's few minutes of work would otherwise sit
+# in front of a migration that other deploys may already need.
 #
-# Scoping per ref means a branch dispatch can now overlap a scheduled run on
-# main, with both writing the same tables. Sync tolerates that: the skill-link
-# insert uses skipDuplicates, so concurrent runs cannot collide on the
-# (opportunityId, skillSlug) key.
+# Within each group a newer run supersedes an older one. For migrations that is
+# what stops a burst of pushes queueing a runner per commit; for syncs it
+# preserves the previous behaviour, where a manual dispatch and a scheduled run
+# on the same ref cancel one another rather than both writing the same tables.
+# Sync tolerates that overlap: the skill-link insert uses skipDuplicates, so
+# concurrent runs cannot collide on the (opportunityId, skillSlug) key.
 concurrency:
-  group: sync-jobs-${{ github.ref }}
+  group: sync-jobs-${{ github.ref }}-${{ github.event_name == 'push' && 'migrate' || 'sync' }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
-  sync:
+  migrate:
+    name: Apply database migrations
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v7
@@ -49,6 +62,39 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx prisma migrate deploy
+
+      # `migrate deploy` reports only whether it applied what was pending, never
+      # whether the result matches prisma/schema.prisma. A migration that applies
+      # cleanly and is still wrong — wrong type, missing NOT NULL, index on the
+      # wrong column — therefore passes silently and surfaces later as a query
+      # error against production. This compares the two directly and is
+      # read-only, so it is safe here and cheap enough for every push.
+      - name: Verify the database matches the schema
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run jobs:check-migration-drift
+
+  sync:
+    name: Sync job listings
+    # Ordering, not just sequencing: a sync must never read a half-applied
+    # schema, so it waits for the migration check to pass. Kept running on the
+    # schedule too, where there is usually nothing to migrate, so the sync can
+    # never race a migration applied outside CI.
+    needs: migrate
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Sync job listings
         env:

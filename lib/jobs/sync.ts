@@ -7,6 +7,7 @@ import {
   fetchRemoteok,
   fetchRemotive,
 } from "./sources";
+import { fetchDevpost, fetchUnstop } from "./event-sources";
 import { SourceError, type NormalizedJob } from "./normalize";
 import { skillsForOpportunity, VOCABULARY_VERSION } from "./skills";
 import { allocateBudget, compareWithinSource, isEntryLevel } from "./relevance";
@@ -50,6 +51,10 @@ function fetcherFor(config: SourceConfig): Fetcher {
   if (config.key === "arbeitnow") return fetchArbeitnow;
   if (config.key === "remotive") return fetchRemotive;
   if (config.key === "remoteok") return fetchRemoteok;
+  if (config.key === "devpost") return fetchDevpost;
+  if (config.key === "unstop:hackathons") return () => fetchUnstop("hackathons");
+  if (config.key === "unstop:conferences") return () => fetchUnstop("conferences");
+  if (config.key === "unstop:internships") return () => fetchUnstop("internships");
   return async () => {
     throw new SourceError(config.key, "no fetcher for aggregator");
   };
@@ -172,6 +177,8 @@ async function writeJobs(source: string, jobs: NormalizedJob[], ttlDays: number)
         vocabVersion: VOCABULARY_VERSION,
         publishedAt: job.publishedAt,
         expiresAt: job.expiresAt,
+        startsAt: job.startsAt,
+        endsAt: job.endsAt,
         fetchedAt,
         ttlExpiresAt,
       },
@@ -192,6 +199,8 @@ async function writeJobs(source: string, jobs: NormalizedJob[], ttlDays: number)
         vocabVersion: VOCABULARY_VERSION,
         publishedAt: job.publishedAt,
         expiresAt: job.expiresAt,
+        startsAt: job.startsAt,
+        endsAt: job.endsAt,
         fetchedAt,
         ttlExpiresAt,
       },

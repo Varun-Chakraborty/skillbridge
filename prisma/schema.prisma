@@ -21,6 +21,11 @@ enum OpportunityKind {
   HACKATHON
   WORKSHOP
   JOB
+
+  /// A conference, summit or other multi-session event a student registers to
+  /// attend rather than apply to. Added for Unstop's `conferences` feed, which
+  /// is the only live event feed found that publishes a registration deadline.
+  CONFERENCE
 }
 
 enum ApplicationStatus {
@@ -176,8 +181,29 @@ model Opportunity {
   vocabVersion Int @default(0)
 
   publishedAt DateTime?
-  expiresAt   DateTime?
-  fetchedAt   DateTime  @default(now())
+
+  /// The last moment a student can *act* on this row — the deadline to submit a
+  /// job application, to register for a conference, or to hand in a hackathon
+  /// submission. One column across all kinds because the meaning is the same in
+  /// each: the point after which acting is pointless.
+  ///
+  /// This was previously dead. Greenhouse populates it from
+  /// `application_deadline`, but no other feed published a closing date, so it
+  /// was always null and documented as a known gap. The event feeds fill it —
+  /// Unstop from `regnRequirements.end_regn_dt`, Devpost from the end of its
+  /// submission window — which is what makes "closes in 6 days" renderable.
+  expiresAt DateTime?
+
+  /// When an event begins. For HACKATHON and CONFERENCE this is when the event
+  /// or submission window opens; null for jobs, which have no start date. Kept
+  /// distinct from `publishedAt`, which is when the posting was announced.
+  startsAt DateTime?
+
+  /// When an event finishes. For CONFERENCE this is the last day; for HACKATHON
+  /// it is when submissions and judging close. Null for jobs.
+  endsAt DateTime?
+
+  fetchedAt DateTime  @default(now())
 
   /// When this row becomes eligible for deletion, materialized by sync from the
   /// owning source's `ttlDays` at write time rather than resolved through a join
@@ -186,7 +212,10 @@ model Opportunity {
   /// written under, so changing a source's TTL does not retroactively apply to
   /// rows that have not been re-fetched since.
   ///
-  /// No source publishes a closing date, so this is derived, not upstream truth.
+  /// Upstream does publish real closing dates for events, but they are kept in
+  /// `expiresAt`/`endsAt` rather than here: `ttlExpiresAt` is a retention
+  /// policy, not a fact about the posting, and a row that ages out of its feed
+  /// has no closing date at all.
   ttlExpiresAt DateTime?
 
   bookmarks    Bookmark[]
@@ -198,6 +227,8 @@ model Opportunity {
   @@index([publishedAt])
   @@index([vocabVersion])
   @@index([ttlExpiresAt])
+  @@index([startsAt])
+  @@index([endsAt])
 }
 
 enum IngestSourceKind {

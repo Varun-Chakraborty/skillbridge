@@ -22,7 +22,8 @@
     "jobs:check-fetch-retry": "tsx scripts/check-fetch-retry.ts",
     "jobs:check-entry-level": "tsx scripts/check-entry-level.ts",
     "jobs:repair-encoding": "tsx scripts/repair-encoding.ts",
-    "jobs:prune-unfiltered": "tsx scripts/prune-unfiltered.ts"
+    "jobs:prune-unfiltered": "tsx scripts/prune-unfiltered.ts",
+    "jobs:check-event-dates": "tsx scripts/check-event-dates.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

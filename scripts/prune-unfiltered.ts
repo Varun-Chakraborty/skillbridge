@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   for (const key of filtered) {
     const rows = await prisma.opportunity.findMany({
       where: { source: key },
-      select: { id: true, title: true, tags: true, employmentType: true },
+      select: { id: true, title: true, tags: true, employmentType: true, kind: true },
     });
 
     const doomed = rows.filter((row) => !isEntryLevel(row));

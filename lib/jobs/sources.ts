@@ -1,4 +1,9 @@
 import {
+  asArray,
+  asId,
+  asJson,
+  asNumber,
+  asString,
   type EmploymentType,
   type NormalizedJob,
   SourceError,
@@ -8,26 +13,6 @@ import {
   stripHtml,
   toDate,
 } from "./normalize";
-
-type Json = Record<string, unknown>;
-
-const asString = (v: unknown): string | null =>
-  typeof v === "string" && v.trim() ? v : null;
-
-const asId = (v: unknown): string | null => {
-  if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  return asString(v);
-};
-
-const asNumber = (v: unknown): number | null => {
-  const n = typeof v === "string" ? Number(v) : v;
-  return typeof n === "number" && Number.isFinite(n) ? n : null;
-};
-
-const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-
-const asJson = (v: unknown): Json | null =>
-  v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : null;
 
 export async function fetchGreenhouse(boardToken: string): Promise<NormalizedJob[]> {
   const source = `greenhouse:${boardToken}`;
@@ -76,6 +61,9 @@ export async function fetchGreenhouse(boardToken: string): Promise<NormalizedJob
         logoUrl: null,
         publishedAt: toDate(job.updated_at ?? job.first_published),
         expiresAt: toDate(job.application_deadline),
+        // Job feeds publish no event window; the event feeds set these.
+        startsAt: null,
+        endsAt: null,
         tags,
       } satisfies NormalizedJob,
     ];
@@ -163,6 +151,9 @@ export async function fetchLever(company: string): Promise<NormalizedJob[]> {
         logoUrl: null,
         publishedAt: toDate(job.createdAt),
         expiresAt: null,
+        // Job feeds publish no event window; the event feeds set these.
+        startsAt: null,
+        endsAt: null,
         tags,
       } satisfies NormalizedJob,
     ];
@@ -217,6 +208,9 @@ export async function fetchAshby(board: string): Promise<NormalizedJob[]> {
         logoUrl: null,
         publishedAt: toDate(job.publishedAt),
         expiresAt: null,
+        // Job feeds publish no event window; the event feeds set these.
+        startsAt: null,
+        endsAt: null,
         tags,
       } satisfies NormalizedJob,
     ];
@@ -293,6 +287,9 @@ async function fetchArbeitnowPage(page: number): Promise<NormalizedJob[]> {
         logoUrl: null,
         publishedAt: toDate(job.created_at),
         expiresAt: null,
+        // Job feeds publish no event window; the event feeds set these.
+        startsAt: null,
+        endsAt: null,
         tags,
       } satisfies NormalizedJob,
     ];
@@ -365,6 +362,9 @@ export async function fetchRemotive(): Promise<NormalizedJob[]> {
         logoUrl: asString(job.company_logo_url),
         publishedAt: toDate(job.publication_date),
         expiresAt: null,
+        // Job feeds publish no event window; the event feeds set these.
+        startsAt: null,
+        endsAt: null,
         tags,
       } satisfies NormalizedJob,
     ];
@@ -410,6 +410,9 @@ export async function fetchRemoteok(): Promise<NormalizedJob[]> {
         logoUrl: asString(job.company_logo) ?? asString(job.logo),
         publishedAt: toDate(job.date ?? job.epoch),
         expiresAt: null,
+        // Job feeds publish no event window; the event feeds set these.
+        startsAt: null,
+        endsAt: null,
         tags,
       } satisfies NormalizedJob,
     ];

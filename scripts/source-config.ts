@@ -125,6 +125,13 @@ async function add(args: string[]): Promise<void> {
   // this path cannot quietly disagree with DEFAULT_SOURCES and sourcesFromEnv,
   // which both filter to entry-level. A new board added at the CLI was the one
   // route that would otherwise have skipped the registry's policy.
+  //
+  // This is safe for the event feeds too, and used not to be. `isEntryLevel`
+  // keys off `kind` and lets HACKATHON, WORKSHOP and CONFERENCE through
+  // untouched, so adding `devpost` or `unstop:hackathons` here keeps every row
+  // even with filtering on. Before that change, this default would have been a
+  // trap: an event source added at the CLI would have filtered itself to nothing
+  // on its first sync, with no error to explain why.
   const entryLevelOnly = !args.includes("--all");
 
   await prisma.ingestSource.upsert({

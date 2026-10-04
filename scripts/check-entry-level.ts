@@ -1,4 +1,5 @@
 import { isEntryLevel } from "../lib/jobs/relevance";
+import type { OpportunityKind } from "../lib/jobs/normalize";
 
 /**
  * Gate for the entry-level filter.
@@ -28,11 +29,67 @@ type Case = {
   title: string;
   tags?: string[];
   employmentType?: EmploymentType;
+  /**
+   * Defaults to JOB. Stated rather than cast because this gate previously built
+   * its argument with `as Parameters<typeof isEntryLevel>[0]`, which type-checked
+   * while leaving `kind` undefined at runtime — so the kind could be dropped from
+   * the call and no case would notice.
+   */
+  kind?: OpportunityKind;
   expect: boolean;
   why: string;
 };
 
 const cases: Case[] = [
+  // --- events: admitted on kind, before the title is read --------------------
+  // These are the cases that justified keying the exemption off `kind`. Devpost
+  // titles are marketing copy and Unstop's are institution names, so there is no
+  // entry-level word to find and no reason to look: a hackathon or a conference
+  // is student-appropriate by construction.
+  {
+    name: "hackathon with no entry-level word in its title",
+    title: "Build, Ship, Shape: Amazon Developer Hackathon",
+    kind: "HACKATHON",
+    expect: true,
+    why: "Devpost titles are marketing copy; 'intern' was never going to appear",
+  },
+  {
+    name: "hackathon titled after a rank word",
+    title: "Lead Generation Hackathon",
+    kind: "HACKATHON",
+    expect: true,
+    why: "'Lead' here means marketing, not seniority — an event has no senior tier",
+  },
+  {
+    name: "conference whose title names a senior role",
+    title: "Senior Leadership Summit",
+    kind: "CONFERENCE",
+    expect: true,
+    why: "the audience is senior, but the row is still an event a student can attend",
+  },
+  {
+    name: "workshop with an empty title vocabulary",
+    title: "Introduction to Vector Databases",
+    kind: "WORKSHOP",
+    tags: [],
+    expect: true,
+    why: "no tags and no keywords, so a kind check is the only thing that can admit it",
+  },
+  {
+    name: "event ignores a veto word it happens to contain",
+    title: "Director of Engineering, a one-day workshop",
+    kind: "WORKSHOP",
+    employmentType: "FULL_TIME",
+    expect: true,
+    why: "the veto must not run on an event — the word describes a speaker, not the role",
+  },
+  {
+    name: "a job is not rescued by having a hackathon-shaped title",
+    title: "Lead Generation Hackathon Engineer",
+    kind: "JOB",
+    expect: false,
+    why: "the exemption is on kind, not on the title happening to contain a word",
+  },
   // --- accepted: the vocabulary a student hub is actually for -----------------
   {
     name: "plain internship",
@@ -440,15 +497,17 @@ let failures = 0;
 
 for (const testCase of cases) {
   const job = {
+    kind: testCase.kind ?? "JOB",
     title: testCase.title,
     tags: testCase.tags ?? [],
     employmentType: testCase.employmentType ?? "OTHER",
-  } as Parameters<typeof isEntryLevel>[0];
+  } satisfies Parameters<typeof isEntryLevel>[0];
 
   const actual = isEntryLevel(job);
   if (actual !== testCase.expect) {
     failures += 1;
     console.log(`FAIL  ${testCase.name}`);
+    console.log(`        kind:  ${job.kind}`);
     console.log(`        title: ${JSON.stringify(testCase.title)}`);
     console.log(`        tags:  ${JSON.stringify(job.tags)}`);
     console.log(`        type:  ${job.employmentType}`);
@@ -465,6 +524,7 @@ function ordering(): string[] {
   const problems: string[] = [];
 
   const seniorLabelled = isEntryLevel({
+    kind: "JOB",
     title: "Senior Platform Engineer",
     tags: ["Internships"],
     employmentType: "INTERNSHIP",
@@ -476,6 +536,7 @@ function ordering(): string[] {
   }
 
   const plainManager = isEntryLevel({
+    kind: "JOB",
     title: "Engineering Manager",
     tags: ["Internships", "Associate"],
     employmentType: "INTERNSHIP",
@@ -487,6 +548,7 @@ function ordering(): string[] {
   }
 
   const seniorAssociate = isEntryLevel({
+    kind: "JOB",
     title: "Senior Associate, Planning",
     tags: ["Finance", "Associate"],
     employmentType: "OTHER",

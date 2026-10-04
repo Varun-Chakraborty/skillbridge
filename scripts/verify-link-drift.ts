@@ -44,6 +44,8 @@ function job(description: string | null, tags: string[] = []): NormalizedJob {
     logoUrl: null,
     publishedAt: new Date("2026-01-01T00:00:00Z"),
     expiresAt: null,
+    startsAt: null,
+    endsAt: null,
     tags,
   };
 }

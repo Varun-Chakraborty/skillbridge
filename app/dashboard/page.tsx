@@ -8,7 +8,8 @@ import ThemeToggle from "@/components/theme-toggle";
 import { getSessionUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { findComplementaryStudents, rankOpportunitiesForUser } from "@/lib/matching";
-import type { EmploymentType, OpportunityKind } from "@/lib/jobs/normalize";
+import type { ScoredOpportunity } from "@/lib/matching";
+import { NON_EMPLOYMENT_KINDS, type EmploymentType, type OpportunityKind } from "@/lib/jobs/normalize";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ const KIND_FILTERS: { label: string; value: OpportunityKind | "ALL" }[] = [
   { label: "All", value: "ALL" },
   { label: "Internships", value: "INTERNSHIP" },
   { label: "Hackathons", value: "HACKATHON" },
+  { label: "Conferences", value: "CONFERENCE" },
   { label: "Workshops", value: "WORKSHOP" },
   { label: "Jobs", value: "JOB" },
 ];
@@ -23,6 +25,7 @@ const KIND_FILTERS: { label: string; value: OpportunityKind | "ALL" }[] = [
 const KIND_LABEL: Record<string, string> = {
   INTERNSHIP: "Internship",
   HACKATHON: "Hackathon",
+  CONFERENCE: "Conference",
   WORKSHOP: "Workshop",
   JOB: "Job",
 };
@@ -48,6 +51,81 @@ function skillLabel(slug: string): string {
   SKILL_LABEL_CACHE.set(slug, label);
   return label;
 }
+
+const DAY_MS = 86_400_000;
+
+/**
+ * `en-GB` deliberately, and pinned with an explicit locale rather than left to the
+ * runtime, so a `5 Oct` card reads the same on every machine regardless of locale.
+ * `timeZone: "UTC"` because the dates come from upstream feeds that publish local
+ * times in their own timezone; reinterpreting them in the server's zone would show
+ * a deadline a day early or late depending on where CI happens to run.
+ *
+ * Constructed once at module scope rather than per card. It is not free, and this
+ * runs for every row in the dashboard's scan window.
+ */
+const DAY_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
+function formatDay(date: Date): string {
+  return DAY_FORMAT.format(date);
+}
+
+/**
+ * The line that answers the only question that matters for an event: can I still
+ * act on it, and when does it actually happen.
+ *
+ * Events carry two deadlines that are genuinely different and routinely weeks
+ * apart — Unstop publishes both `end_regn_dt` and `end_date`, and a hackathon can
+ * close submissions on the 19th and run until the 17th of next month. Printing
+ * one number for both would either hide the deadline or hide the event.
+ *
+ * Past 30 days a countdown stops carrying information worth the space, so it
+ * falls back to a date. Inside 30 days the countdown is the useful form, because
+ * "closes in 6 days" is what changes whether a student bothers today.
+ *
+ * `ceil` rather than a raw division so "closes in 1 day" means a day is left
+ * rather than "0 days, i.e. today": a deadline one hour out floors to 0 and would
+ * be mislabelled as closed while still reachable.
+ */
+function scheduleNote(match: ScoredOpportunity): string | null {
+  const parts: string[] = [];
+  const isEvent = NON_EMPLOYMENT_KINDS.has(match.kind as OpportunityKind);
+
+  if (isEvent && match.startsAt && match.endsAt) {
+    parts.push(`${formatDay(match.startsAt)} – ${formatDay(match.endsAt)}`);
+  }
+
+  if (match.expiresAt) {
+    const days = Math.ceil((match.expiresAt.getTime() - Date.now()) / DAY_MS);
+    if (days < 0) {
+      parts.push("Closed");
+    } else if (days === 0) {
+      parts.push("Closes today");
+    } else if (days <= 30) {
+      parts.push(`Closes in ${days} day${days === 1 ? "" : "s"}`);
+    } else {
+      parts.push(`${isEvent ? "Register" : "Apply"} by ${formatDay(match.expiresAt)}`);
+    }
+  }
+
+  return parts.length ? parts.join(" · ") : null;
+}
+
+/**
+ * What the call to action actually does, which is not "apply" for an event — you
+ * register for a conference and enter a hackathon. Keyed by kind rather than
+ * derived from the event set, so a kind added without an entry here falls back to
+ * neutral wording instead of rendering a blank button.
+ */
+const ACTION_LABEL: Record<string, string> = {
+  HACKATHON: "Enter",
+  CONFERENCE: "Register",
+  WORKSHOP: "Sign up",
+};
 
 function initials(name: string): string {
   return name
@@ -285,6 +363,12 @@ export default async function DashboardPage({
                 const employment = EMPLOYMENT_LABEL[
                   match.employmentType as EmploymentType
                 ];
+                // Computed once. Calling it inline in the markup would run it twice
+                // per card, and since it reads the clock a deadline landing on
+                // midnight could render "Closes in 1 day" and "Closes today" in the
+                // same card.
+                const schedule = scheduleNote(match);
+                const action = ACTION_LABEL[match.kind] ?? "View & apply";
                 return (
                   <li
                     key={match.id}
@@ -313,6 +397,10 @@ export default async function DashboardPage({
                       {match.company ?? "Independent"}
                       {match.location ? ` · ${match.location}` : ""}
                     </p>
+
+                    {schedule ? (
+                      <p className="mt-1 text-xs font-semibold text-feature">{schedule}</p>
+                    ) : null}
 
                     {match.matchedSkills.length || match.missingSkills.length ? (
                       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -362,7 +450,9 @@ export default async function DashboardPage({
                             size: "sm",
                           })}
                         >
-                          {appliedIds.has(match.id) ? "Applied · View post" : "View & apply"}
+                          {appliedIds.has(match.id)
+                            ? "Applied · View post"
+                            : action}
                         </a>
                       ) : (
                         <span className="text-xs text-muted-foreground">No direct link</span>

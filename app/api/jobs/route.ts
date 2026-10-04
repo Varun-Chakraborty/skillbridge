@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { SOURCE_ATTRIBUTION } from "@/lib/jobs/sources";
 
-const KINDS = ["INTERNSHIP", "HACKATHON", "WORKSHOP", "JOB"] as const;
+const KINDS = ["INTERNSHIP", "HACKATHON", "WORKSHOP", "JOB", "CONFERENCE"] as const;
 const EMPLOYMENT = ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERNSHIP", "VOLUNTEER", "OTHER"] as const;
 
 type Kind = (typeof KINDS)[number];

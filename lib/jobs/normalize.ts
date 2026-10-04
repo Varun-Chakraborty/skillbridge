@@ -6,7 +6,33 @@ export type EmploymentType =
   | "VOLUNTEER"
   | "OTHER";
 
-export type OpportunityKind = "INTERNSHIP" | "HACKATHON" | "WORKSHOP" | "JOB";
+export type OpportunityKind =
+  | "INTERNSHIP"
+  | "HACKATHON"
+  | "WORKSHOP"
+  | "JOB"
+  | "CONFERENCE";
+
+/**
+ * Kinds a student attends, enters or registers for rather than applies to.
+ *
+ * These are exempt from the entry-level filter in `isEntryLevel`. The filter
+ * looks for "internship", "junior", "fellow" and friends in a title because a
+ * job posting is how an employer advertises seniority. An event has no such
+ * axis: a hackathon or a conference is student-appropriate by definition, so
+ * there is no signal to find and the filter would reject every row. "Build,
+ * Ship, Shape: Amazon Developer Hackathon" contains no entry-level word and
+ * never will.
+ *
+ * This lives here rather than in the database because it is a compile-time
+ * question about which kinds mean what, and a kind added to the Prisma enum
+ * without being added here fails `tsc` instead of silently losing its rows.
+ */
+export const NON_EMPLOYMENT_KINDS: ReadonlySet<OpportunityKind> = new Set<OpportunityKind>([
+  "HACKATHON",
+  "WORKSHOP",
+  "CONFERENCE",
+]);
 
 export type NormalizedJob = {
   source: string;
@@ -24,9 +50,55 @@ export type NormalizedJob = {
   applyUrl: string | null;
   logoUrl: string | null;
   publishedAt: Date | null;
+
+  /// Last moment the student can act: apply, register, or submit. For a job
+  /// that is the application deadline; for an event it is the registration or
+  /// submission close. Null when the source publishes no deadline.
   expiresAt: Date | null;
+
+  /// When an event starts, or a hackathon's submission window opens. Null for
+  /// jobs, which have no start date. Kept apart from `publishedAt`, which is
+  /// when the posting was announced rather than when anything happens.
+  startsAt: Date | null;
+
+  /// When an event finishes: the last day of a conference, or when hackathon
+  /// submissions and judging close. Null for jobs.
+  endsAt: Date | null;
+
   tags: string[];
 };
+
+/**
+ * Defensive readers for untrusted upstream payloads.
+ *
+ * Every feed lies about its own shape eventually — a field that is a string on
+ * Monday and an object on Tuesday, a number that arrives as `"42"`, an array
+ * that arrives as `null`. These coerce defensively so a fetcher reads as
+ * mapping logic rather than as a wall of `typeof` checks, and so all feeds
+ * agree on what "missing" means.
+ *
+ * They live here rather than in `sources.ts` because the event feeds need them
+ * too, and a second copy would drift from the first.
+ */
+export type Json = Record<string, unknown>;
+
+export const asString = (v: unknown): string | null =>
+  typeof v === "string" && v.trim() ? v : null;
+
+export const asId = (v: unknown): string | null => {
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  return asString(v);
+};
+
+export const asNumber = (v: unknown): number | null => {
+  const n = typeof v === "string" ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+};
+
+export const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+export const asJson = (v: unknown): Json | null =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : null;
 
 export class SourceError extends Error {
   constructor(

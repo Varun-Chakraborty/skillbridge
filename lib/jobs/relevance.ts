@@ -1,4 +1,4 @@
-import type { NormalizedJob } from "./normalize";
+import { NON_EMPLOYMENT_KINDS, type NormalizedJob } from "./normalize";
 
 /**
  * Entry-level detection.
@@ -40,9 +40,14 @@ import type { NormalizedJob } from "./normalize";
  * but student work. Every other term in the vocabulary keeps its boundaries,
  * because that is what stops "International" reading as "intern" and "Gradient"
  * as "grad".
+ *
+ * They appear as a `|praktikum|praktika|werkstudent` tail on both patterns below
+ * rather than in a shared `GERMAN_PATTERN` constant. That constant did exist, and
+ * it was dead: the terms had been inlined into each regex literal, so editing the
+ * constant changed nothing while the name still advertised itself as the place to
+ * edit. `scripts/check-entry-level.ts` asserts the German cases directly, so
+ * deleting a term now fails a gate rather than passing quietly.
  */
-const GERMAN_PATTERN = /praktikum|praktika|werkstudent/;
-
 const ENTRY_LEVEL_PATTERN =
   /\b(intern|interns|internship|internships|fellow|fellows|fellowship|fellowships|co[\s-]?op|working[\s-]?student|trainee|traineeship|estagi|estagio|stagiaire|stage|placement|junior|entry[\s-]?level|graduate|new[\s-]?grad|grad|associate|apprentice|apprenticeship)\b|praktikum|praktika|werkstudent/i;
 
@@ -95,8 +100,22 @@ const ENTRY_LEVEL_EMPLOYMENT = new Set(["INTERNSHIP"]);
  * evidence about the role's wording.
  */
 export function isEntryLevel(
-  job: Pick<NormalizedJob, "title" | "tags" | "employmentType">,
+  job: Pick<NormalizedJob, "kind" | "title" | "tags" | "employmentType">,
 ): boolean {
+  // Events pass unconditionally, before the title is read at all.
+  //
+  // Every pattern below is a proxy for "this employer is not asking for
+  // experience", which is a question only employment postings answer. A
+  // hackathon or conference is student-appropriate by construction — there is
+  // no senior version of a hackathon — so running the patterns over one rejects
+  // all of them on a technicality and leaves a dashboard full of nothing.
+  //
+  // Deliberately a kind check rather than a per-source registry exemption. An
+  // exemption can be lost: `scripts/source-config.ts` defaults new sources to
+  // entry-level-filtered, so the next person to add an event feed would get
+  // zero rows and no error. Keying off the kind makes that failure impossible.
+  if (NON_EMPLOYMENT_KINDS.has(job.kind)) return true;
+
   // Title only, and only for the words that name a student programme outright.
   // This is the one signal that outranks a rank word, because "Product Manager
   // Intern" is an internship whatever the role it interns into.

@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { prisma } from "@/lib/db";
 import { VOCABULARY_VERSION } from "@/lib/jobs/skills";
 import { repairVocabulary } from "@/lib/jobs/vocab-repair";
+import { NON_EMPLOYMENT_KINDS, type OpportunityKind } from "@/lib/jobs/normalize";
 
 export type ScoredOpportunity = {
   id: string;
@@ -15,6 +16,12 @@ export type ScoredOpportunity = {
   employmentType: string;
   remote: boolean;
   publishedAt: Date | null;
+  /** Last moment to apply, register or submit. Null when the source publishes none. */
+  expiresAt: Date | null;
+  /** When the event starts, or a submission window opens. Null for jobs. */
+  startsAt: Date | null;
+  /** When the event finishes. Null for jobs. */
+  endsAt: Date | null;
   score: number | null;
   matchedSkills: string[];
   missingSkills: string[];
@@ -98,10 +105,16 @@ const ENTRY_LEVEL_PATTERNS = [
 function senioritySignal(title: string, kind: string): number {
   const text = title.toLowerCase();
 
-  // Internship and workshop kinds are early career by definition, whatever the
+  // Internship and event kinds are early career by definition, whatever the
   // title says. "Senior Intern" exists, and the entry level is the fact that
   // matters to this audience.
-  if (kind === "INTERNSHIP" || kind === "WORKSHOP") return -1;
+  //
+  // Events come from the shared NON_EMPLOYMENT_KINDS set rather than being named
+  // out, for the same reason `isEntryLevel` uses it. Naming only INTERNSHIP and
+  // WORKSHOP left HACKATHON exposed: "Lead Generation Hackathon" contains "lead"
+  // and ranked as a role for experienced people, because nothing could tell that
+  // the word meant marketing.
+  if (kind === "INTERNSHIP" || NON_EMPLOYMENT_KINDS.has(kind as OpportunityKind)) return -1;
 
   // An unambiguous seniority word beats an entry-level word. "Senior Associate"
   // is a senior job that happens to contain the word "associate", and reading it
@@ -175,6 +188,9 @@ export async function rankOpportunitiesForUser(
       employmentType: true,
       remote: true,
       publishedAt: true,
+      expiresAt: true,
+      startsAt: true,
+      endsAt: true,
       matches: { select: { skillSlug: true } },
       // Cheap, and only used to decide whether the repair below has anything
       // to do. The description is deliberately *not* selected here: it would add
@@ -217,6 +233,9 @@ export async function rankOpportunitiesForUser(
         employmentType: opportunity.employmentType,
         remote: opportunity.remote,
         publishedAt: opportunity.publishedAt,
+        expiresAt: opportunity.expiresAt,
+        startsAt: opportunity.startsAt,
+        endsAt: opportunity.endsAt,
         score,
         matchedSkills,
         missingSkills,

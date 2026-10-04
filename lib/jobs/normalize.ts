@@ -47,6 +47,63 @@ const RATE_LIMIT_RETRIES = 2;
 /** Fallback wait when a 429 arrives without a usable `Retry-After`. */
 const RATE_LIMIT_BACKOFF_MS = 2000;
 
+/**
+ * How many times a timeout or connection-level failure is retried.
+ *
+ * A separate budget from the 429 one because the two mean opposite things: a
+ * 429 is the endpoint deliberately refusing us and telling us how long to wait,
+ * whereas these are the network failing underneath us and usually clear on
+ * their own within a second or two.
+ */
+const TRANSIENT_RETRIES = 2;
+
+/** First wait before retrying a transient failure; doubles per attempt. */
+const TRANSIENT_BACKOFF_MS = 1000;
+
+/** Ceiling on the doubling above, so three attempts cannot outlast a source. */
+const MAX_TRANSIENT_BACKOFF_MS = 8000;
+
+/**
+ * System error codes worth another attempt.
+ *
+ * Node's fetch rejects with a bare `TypeError: fetch failed` and hides the real
+ * reason on `cause`, so a connection reset and a DNS miss are indistinguishable
+ * at the top level. They are separated from HTTP errors deliberately: a 404
+ * from a company that does not use Lever is a configuration mistake that will
+ * still be a 404 in two seconds, and retrying it just delays the report.
+ */
+const TRANSIENT_CAUSES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+/**
+ * Whether a thrown value is a transient network failure rather than a verdict.
+ *
+ * Walks the `cause` chain because undici nests the system error one or two
+ * levels down, and the depth is bounded so a self-referential cause cannot hang
+ * the sync.
+ */
+function isTransient(error: unknown): boolean {
+  // Our own timeout: the AbortController in fetchJson, not the server.
+  if (error instanceof Error && error.name === "AbortError") return true;
+
+  let cause: unknown = error instanceof Error ? (error as { cause?: unknown }).cause : undefined;
+  for (let depth = 0; depth < 5 && cause instanceof Error; depth++) {
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === "string" && TRANSIENT_CAUSES.has(code)) return true;
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -72,7 +129,7 @@ function retryAfterMs(response: Response): number {
 }
 
 /**
- * Fetch JSON, retrying a rate-limited response with backoff.
+ * Fetch JSON, retrying both rate limits and transient network failures.
  *
  * All six sources are public, keyless, and shared with every other project
  * scraping the same feed, so a 429 is an expected condition rather than an
@@ -81,16 +138,29 @@ function retryAfterMs(response: Response): number {
  * into fourteen requests against an API whose own response asks callers not to
  * abuse it.
  *
- * Bounded to `RATE_LIMIT_RETRIES` and capped at 30s per wait, so a persistently
- * throttled endpoint fails that one source for the run rather than stalling the
- * whole sync behind it.
+ * Timeouts and connection resets are retried for the opposite reason. They were
+ * previously terminal, which made a momentary blip indistinguishable from a dead
+ * endpoint — and because a failed source is not refreshed, its rows stop having
+ * their TTL extended and quietly age out instead of erroring loudly. Measured on
+ * Lever, whose larger boards take 12–20s against a timeout that was too tight
+ * for them.
+ *
+ * Both budgets are bounded and every wait capped, so a persistently broken
+ * endpoint fails that one source for the run rather than stalling the whole sync
+ * behind it. HTTP errors other than 429 are never retried.
  */
 export async function fetchJson(
   source: string,
   url: string,
   { timeoutMs = DEFAULT_TIMEOUT_MS, headers }: { timeoutMs?: number; headers?: HeadersInit } = {},
 ): Promise<unknown> {
-  for (let attempt = 0; ; attempt++) {
+  // Tracked apart from the loop counter because the two budgets are independent:
+  // a run that exhausts its rate-limit retries has not also spent its transient
+  // ones, and charging one against the other would silently disable whichever
+  // was hit second.
+  let transientAttempt = 0;
+
+  for (let rateLimitAttempt = 0; ; rateLimitAttempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -100,7 +170,7 @@ export async function fetchJson(
         cache: "no-store",
       });
 
-      if (response.status === 429 && attempt < RATE_LIMIT_RETRIES) {
+      if (response.status === 429 && rateLimitAttempt < RATE_LIMIT_RETRIES) {
         await sleep(retryAfterMs(response));
         continue;
       }
@@ -111,6 +181,17 @@ export async function fetchJson(
       return await response.json();
     } catch (error) {
       if (error instanceof SourceError) throw error;
+
+      if (isTransient(error) && transientAttempt < TRANSIENT_RETRIES) {
+        const backoff = Math.min(
+          TRANSIENT_BACKOFF_MS * 2 ** transientAttempt,
+          MAX_TRANSIENT_BACKOFF_MS,
+        );
+        transientAttempt++;
+        await sleep(backoff);
+        continue;
+      }
+
       if (error instanceof Error && error.name === "AbortError") {
         throw new SourceError(source, `timed out after ${timeoutMs}ms`);
       }

@@ -82,12 +82,29 @@ export async function fetchGreenhouse(boardToken: string): Promise<NormalizedJob
   });
 }
 
+/**
+ * Per-request ceiling for Lever, well above the shared default.
+ *
+ * Lever returns every posting for a board in one undifferentiated response,
+ * with no pagination and no size hint, so cost scales with how many roles a
+ * company happens to have open. Measured against `matchgroup` (72 postings,
+ * 1.09 MB): 12.4s, 12.7s, 19.8s across three consecutive requests, with
+ * time-to-first-byte alone reaching 9.6s before any body transferred.
+ *
+ * The previous 15s sat inside that spread, so roughly half of all runs to a
+ * board that size failed. Retrying in `fetchJson` does not rescue that case —
+ * three attempts at 15s still lose to a board that reliably needs 20s — so the
+ * ceiling is raised rather than the retries leaned on. 45s is ~2x the worst
+ * observation, not a tuned value.
+ */
+const LEVER_TIMEOUT_MS = 45000;
+
 export async function fetchLever(company: string): Promise<NormalizedJob[]> {
   const source = `lever:${company}`;
   const data = await fetchJson(
     source,
     `https://api.lever.co/v0/postings/${encodeURIComponent(company)}?mode=json`,
-    { timeoutMs: 15000 },
+    { timeoutMs: LEVER_TIMEOUT_MS },
   );
   const jobs = Array.isArray(data) ? data : [];
   if (!jobs.length) throw new SourceError(source, "company returned no postings");

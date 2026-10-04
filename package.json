@@ -18,6 +18,7 @@
     "jobs:check-budget": "tsx scripts/check-budget-allocation.ts",
     "jobs:check-ttl": "tsx scripts/check-ttl-sweep.ts",
     "jobs:check-encoding": "tsx scripts/check-encoding.ts",
+    "jobs:check-fetch-retry": "tsx scripts/check-fetch-retry.ts",
     "jobs:repair-encoding": "tsx scripts/repair-encoding.ts"
   },
   "dependencies": {

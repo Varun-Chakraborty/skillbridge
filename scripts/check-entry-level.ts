@@ -186,18 +186,25 @@ const cases: Case[] = [
     why: "teams carry the signal when titles are generic",
   },
   {
-    name: "senior word in a tag must not veto a junior title",
+    name: "intern in the title wins before the veto is consulted",
     title: "Software Engineer Intern",
     tags: ["Senior Payments Team", "Engineering"],
     expect: true,
-    why: "the veto reads the title only; teams are named after things like this",
+    why: "the student-program tier decides this one, which is why it outranks a rank word",
+  },
+  {
+    name: "senior word in a tag must not veto",
+    title: "Data Analyst",
+    tags: ["Senior Payments Team", "Internship Program"],
+    expect: true,
+    why: "the title carries no student-program word, so this genuinely reaches the veto — and teams really are named things like 'Senior Payments Team'",
   },
   {
     name: "architect in a tag must not veto",
-    title: "Backend Intern",
-    tags: ["Platform Architecture"],
+    title: "Data Analyst",
+    tags: ["Platform Architecture", "Placement Student"],
     expect: true,
-    why: "same reason: 'architecture' is a department, not a rank",
+    why: "same reason: 'Architecture' is a department, not a rank",
   },
 
   // --- rejected: no student signal at all ------------------------------------
@@ -314,7 +321,13 @@ const cases: Case[] = [
     name: "Graduate Manager",
     title: "Graduate Manager",
     expect: false,
-    why: "'graduate' matched but managing is not student work",
+    why: "bare 'graduate' means 'has graduated' too often to outrank 'manager'; measured at 3 rows against the internships the student-program tier keeps",
+  },
+  {
+    name: "Graduate Operations Supervisor, the real one",
+    title: "Graduate Operations Supervisor (m/w/d)",
+    expect: false,
+    why: "the documented cost of the call above, asserted so it stays visible rather than becoming folklore",
   },
 
   // --- rejected: the veto overrules an upstream label ------------------------
@@ -339,8 +352,40 @@ const cases: Case[] = [
     name: "head of internships, in the Internships team",
     title: "Head of Internships",
     tags: ["Internships"],
-    expect: false,
-    why: "the worst realistic case, and the one this ordering exists for",
+    expect: true,
+    why: "the accepted cost of the student-program tier outranking the veto: the title names Internships, so it is let through. One cosmetic row against the internships the tier protects.",
+  },
+
+  // --- accepted: a student-program word outranks a rank word ------------------
+  // These are the 43 rows the first version of the veto lost, measured against
+  // 2,139 stored rows. Applying the veto uniformly hid real internships, which is
+  // the exact failure the veto was written to prevent, just in the other
+  // direction.
+  {
+    name: "Product Manager Intern",
+    title: "Product Manager Intern",
+    tags: ["Product"],
+    expect: true,
+    why: "no company titles a senior role Intern; the word decides, the role does not",
+  },
+  {
+    name: "Junior Product Manager",
+    title: "Junior Product Manager (m/f/d)",
+    expect: true,
+    why: "'junior' names a level as a definition, so it outranks 'manager'",
+  },
+  {
+    name: "Junior Solution Architect",
+    title: "Junior Solution Architect DACH",
+    expect: true,
+    why: "same, against 'architect'",
+  },
+  {
+    name: "New Grad Accelerator in front of a rank word",
+    title: "Product Manager: New Grad Accelerator",
+    tags: ["Engineering"],
+    expect: true,
+    why: "Stripe's graduate programme, which the first version of the veto hid",
   },
 
   // --- boundaries ------------------------------------------------------------
@@ -393,9 +438,11 @@ for (const testCase of cases) {
   }
 }
 
-// The two signals that decide the contested cases, asserted separately so a
+// The ordering that decides the contested cases, asserted separately so a
 // refactor that satisfies every table case above by luck still cannot pass if
-// the ordering itself changes.
+// the ordering itself changes. The student-program tier is deliberately absent
+// from both: these titles contain no intern/fellow/junior/new-grad word, so
+// nothing may rescue them.
 function ordering(): string[] {
   const problems: string[] = [];
 
@@ -421,6 +468,17 @@ function ordering(): string[] {
     );
   }
 
+  const seniorAssociate = isEntryLevel({
+    title: "Senior Associate, Planning",
+    tags: ["Finance", "Associate"],
+    employmentType: "OTHER",
+  });
+  if (seniorAssociate) {
+    problems.push(
+      "the exact title that motivated the veto came back through",
+    );
+  }
+
   return problems;
 }
 
@@ -431,7 +489,7 @@ for (const problem of ordering()) {
 
 const accepted = cases.filter((c) => c.expect).length;
 console.log(
-  `\n${cases.length} cases (${accepted} accept / ${cases.length - accepted} reject) + 2 ordering assertions`,
+  `\n${cases.length} cases (${accepted} accept / ${cases.length - accepted} reject) + 3 ordering assertions`,
 );
 console.log(failures === 0 ? "all pass" : `${failures} failure(s)`);
 

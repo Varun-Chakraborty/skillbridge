@@ -31,16 +31,33 @@ const ENTRY_LEVEL_PATTERN =
   /\b(intern|interns|internship|internships|fellow|fellows|fellowship|fellowships|co[\s-]?op|praktikum|praktika|werkstudent|working[\s-]?student|trainee|traineeship|estagi|estagio|stagiaire|stage|placement|junior|entry[\s-]?level|graduate|new[\s-]?grad|grad|associate|apprentice|apprenticeship)\b/i;
 
 /**
+ * Words that name a student programme outright.
+ *
+ * Split out from the rest of the vocabulary because these alone are allowed to
+ * overrule a rank word in the same title. Measuring the whole set against
+ * 2,139 stored rows showed why that distinction is load-bearing: applying the
+ * veto uniformly cost 82 rows, of which 43 were real losses — "Product Manager
+ * Intern", "AI Content Manager Intern", "Junior Solution Architect". No company
+ * titles a senior role "Intern", so a title containing one of these is a student
+ * role whatever else it says. `junior` and `new grad` are here for the same
+ * reason — both name a level as a definition rather than hinting at one, and
+ * both appear in front of a rank word in real postings ("Product Manager: New
+ * Grad Accelerator", "Junior Solution Architect").
+ *
+ * Left in the tier a rank word can overrule: bare `graduate` and `grad`, which
+ * so often means "has graduated" rather than "is a graduate entrant", plus
+ * `associate` and `placement`. "Graduate Operations Supervisor" is the cost of
+ * that call, and it is three rows against the internships it protects.
+ */
+const STUDENT_PROGRAM_PATTERN =
+  /\b(intern|interns|internship|internships|fellow|fellows|fellowship|fellowships|co[\s-]?op|praktikum|praktika|werkstudent|working[\s-]?student|trainee|traineeship|estagi|estagio|stagiaire|stage|apprentice|apprenticeship|junior|new[\s-]?grad(?:uate)?)\b/i;
+
+/**
  * Words that veto the match above.
  *
  * `associate` on its own is a genuine coin flip: at banks and consultancies it
  * is the entry track, but "Associate Manager" and "Senior Associate" are not,
  * and both arrived from Lever.
- *
- * Deliberately blunt — it reads a title and rejects. That is the correct bias
- * for a filter every source now runs through: excluding an odd junior posting
- * costs a student one row, while admitting "Senior Associate" is the exact
- * failure this exists to prevent.
  */
 const SENIOR_PATTERN =
   /\b(senior|sn?r|manager|director|head[\s-]?of|principal|chief|vice[\s-]?president|vp|lead|supervisor|partner|architect)\b/i;
@@ -64,22 +81,26 @@ const ENTRY_LEVEL_EMPLOYMENT = new Set(["INTERNSHIP"]);
 export function isEntryLevel(
   job: Pick<NormalizedJob, "title" | "tags" | "employmentType">,
 ): boolean {
-  // A title that names a seniority disqualifies the posting outright, ahead of
-  // every other signal — including an employment type of INTERNSHIP, because
-  // feeds do get commitment wrong. The guarantee is worth more than the
-  // exceptions it costs: no posting whose title says senior is ever shown to a
-  // student as something they can apply to. What it gives up is an intern title
-  // that happens to contain one of these words ("Intern, Senior Team"), which
-  // is rarer than the senior postings it keeps out.
-  if (SENIOR_PATTERN.test(job.title)) return false;
+  // Title only, and only for the words that name a student programme outright.
+  // This is the one signal that outranks a rank word, because "Product Manager
+  // Intern" is an internship whatever the role it interns into.
+  if (STUDENT_PROGRAM_PATTERN.test(job.title)) return true;
 
-  if (ENTRY_LEVEL_EMPLOYMENT.has(job.employmentType)) return true;
+  // Otherwise a title naming a seniority disqualifies the posting — including
+  // when the feed labels it INTERNSHIP, because feeds do get commitment wrong.
+  // The guarantee is what matters: no senior-titled posting is shown to a
+  // student as something they can apply to. What it costs is a genuinely junior
+  // title carrying a rank word, which is the smaller error, and the cost is
+  // measured in check-entry-level rather than assumed.
+  if (SENIOR_PATTERN.test(job.title)) return false;
 
   // Tags join the haystack because teams carry the signal when titles are
   // generic: on Lever and Greenhouse a posting titled "Software Engineer" under
   // a team named "Internships" is the case that reading titles alone misses,
   // and that is what the corrected `categories.team` mapping exists to expose.
-  return ENTRY_LEVEL_PATTERN.test(`${job.title} ${job.tags.join(" ")}`);
+  if (ENTRY_LEVEL_PATTERN.test(`${job.title} ${job.tags.join(" ")}`)) return true;
+
+  return ENTRY_LEVEL_EMPLOYMENT.has(job.employmentType);
 }
 
 /**

@@ -32,17 +32,38 @@ export type SourceConfig = {
  *   ATS boards  30d  a role stays listed well past a student's deadline, so
  *                    these age out on a slow clock rather than the feed's.
  *
- * `entryLevelOnly` is on for Arbeitnow only. It is the one source whose feed is
- * 85% senior or unclassifiable; the ATS boards are senior by design and
- * filtering them would leave nothing to show.
+ * `entryLevelOnly` is on for every source. This reverses an earlier decision
+ * that filtered Arbeitnow alone, on the reasoning that the ATS boards were
+ * "senior by design and filtering them would leave nothing to show". Measured
+ * against the live feeds, that was right that the boards are senior and wrong
+ * that filtering empties them. Yield once filtered, against what each feed
+ * actually returned:
+ *
+ *   arbeitnow            334 / 2145   16%
+ *   greenhouse:stripe     47 /  716    7%
+ *   remoteok               9 /   99    9%
+ *   greenhouse:figma       7 /  162    4%
+ *   ashby:ashby            0 /   62    0%
+ *   remotive               0 /   16    0%
+ *
+ * A hub aimed at students that lists 900 Stripe postings they cannot apply to
+ * is worse than a smaller table they can act on, so filtering is the default
+ * and letting a source through unfiltered is now the deliberate exception,
+ * recorded per source in the registry.
+ *
+ * Two sources currently filter to nothing (`ashby:ashby`, `remotive`). They
+ * stay enabled because zero yield on one snapshot is not a permanent property
+ * of a feed, and because a source that starts yielding needs no redeploy to
+ * be picked up. They are the first candidates for
+ * `npm run jobs:sources -- set <key> enabled=false`.
  */
 const DEFAULT_SOURCES: SourceConfig[] = [
   { key: "arbeitnow", kind: "AGGREGATOR", boardToken: null, weight: 100, ttlDays: 7, entryLevelOnly: true },
-  { key: "remotive", kind: "AGGREGATOR", boardToken: null, weight: 100, ttlDays: 14, entryLevelOnly: false },
-  { key: "remoteok", kind: "AGGREGATOR", boardToken: null, weight: 100, ttlDays: 60, entryLevelOnly: false },
-  { key: "greenhouse:stripe", kind: "ATS", boardToken: "stripe", weight: 100, ttlDays: 30, entryLevelOnly: false },
-  { key: "greenhouse:figma", kind: "ATS", boardToken: "figma", weight: 100, ttlDays: 30, entryLevelOnly: false },
-  { key: "ashby:ashby", kind: "ATS", boardToken: "ashby", weight: 100, ttlDays: 30, entryLevelOnly: false },
+  { key: "remotive", kind: "AGGREGATOR", boardToken: null, weight: 100, ttlDays: 14, entryLevelOnly: true },
+  { key: "remoteok", kind: "AGGREGATOR", boardToken: null, weight: 100, ttlDays: 60, entryLevelOnly: true },
+  { key: "greenhouse:stripe", kind: "ATS", boardToken: "stripe", weight: 100, ttlDays: 30, entryLevelOnly: true },
+  { key: "greenhouse:figma", kind: "ATS", boardToken: "figma", weight: 100, ttlDays: 30, entryLevelOnly: true },
+  { key: "ashby:ashby", kind: "ATS", boardToken: "ashby", weight: 100, ttlDays: 30, entryLevelOnly: true },
 ];
 
 /**
@@ -73,7 +94,7 @@ function sourcesFromEnv(): SourceConfig[] {
       boardToken: token,
       weight: 100,
       ttlDays: 30,
-      entryLevelOnly: false,
+      entryLevelOnly: true,
     });
   }
 

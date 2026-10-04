@@ -16,16 +16,34 @@ import type { NormalizedJob } from "./normalize";
  * classify it by. Ingesting all of it to surface the 270 entry-level postings
  * would let one aggregator dominate the whole table and dilute matching for
  * everyone. `entryLevelOnly` on the registry row applies this filter per source
- * instead of globally, because the ATS boards are mostly senior by design and
- * filtering them globally would empty the table.
+ * instead of globally, so a source can be exempted when a board's feed is
+ * mostly senior but a few of its postings are still worth a student's time.
  *
- * The pattern deliberately includes the European and South American vocabulary
- * that appears in the same feeds: `praktikum` and `werkstudent` (German),
- * `estagi` (Portuguese), `stagiaire`/`stage` (French). Those postings are real
- * internships that an English-only pattern misses.
+ * The pattern deliberately includes the vocabulary that appears across these
+ * feeds and is missing from an English-only reading: `fellowship`, `co-op` and
+ * `placement` alongside `intern`, because a student hub is after all of them and
+ * `fellowship` was measurably the one outright absent; `praktikum` and
+ * `werkstudent` (German), `estagi` (Portuguese), `stagiaire`/`stage` (French),
+ * `working student` (British and Dutch boards). Those postings are real student
+ * work that the obvious spelling misses.
  */
 const ENTRY_LEVEL_PATTERN =
-  /\b(intern|interns|internship|internships|praktikum|praktika|werkstudent|trainee|traineeship|estagi|estagio|stagiaire|stage|junior|entry[\s-]?level|graduate|new[\s-]?grad|grad|associate|apprentice|apprenticeship)\b/i;
+  /\b(intern|interns|internship|internships|fellow|fellows|fellowship|fellowships|co[\s-]?op|praktikum|praktika|werkstudent|working[\s-]?student|trainee|traineeship|estagi|estagio|stagiaire|stage|placement|junior|entry[\s-]?level|graduate|new[\s-]?grad|grad|associate|apprentice|apprenticeship)\b/i;
+
+/**
+ * Words that veto the match above.
+ *
+ * `associate` on its own is a genuine coin flip: at banks and consultancies it
+ * is the entry track, but "Associate Manager" and "Senior Associate" are not,
+ * and both arrived from Lever.
+ *
+ * Deliberately blunt — it reads a title and rejects. That is the correct bias
+ * for a filter every source now runs through: excluding an odd junior posting
+ * costs a student one row, while admitting "Senior Associate" is the exact
+ * failure this exists to prevent.
+ */
+const SENIOR_PATTERN =
+  /\b(senior|sn?r|manager|director|head[\s-]?of|principal|chief|vice[\s-]?president|vp|lead|supervisor|partner|architect)\b/i;
 
 /** Roles these read as entry-level even when the title does not say so. */
 const ENTRY_LEVEL_EMPLOYMENT = new Set(["INTERNSHIP"]);
@@ -37,13 +55,31 @@ const ENTRY_LEVEL_EMPLOYMENT = new Set(["INTERNSHIP"]);
  * cheap and deterministic so it can run inside the sync loop over a few
  * thousand rows, and so its behaviour is explainable when someone asks why a
  * posting they saw yesterday is gone today.
+ *
+ * Two signals remain after the veto, in descending order of how much each can be
+ * trusted: a source labelling a posting INTERNSHIP is making a claim about that
+ * specific posting, whereas a term found in the title or a team name is
+ * evidence about the role's wording.
  */
 export function isEntryLevel(
   job: Pick<NormalizedJob, "title" | "tags" | "employmentType">,
 ): boolean {
+  // A title that names a seniority disqualifies the posting outright, ahead of
+  // every other signal — including an employment type of INTERNSHIP, because
+  // feeds do get commitment wrong. The guarantee is worth more than the
+  // exceptions it costs: no posting whose title says senior is ever shown to a
+  // student as something they can apply to. What it gives up is an intern title
+  // that happens to contain one of these words ("Intern, Senior Team"), which
+  // is rarer than the senior postings it keeps out.
+  if (SENIOR_PATTERN.test(job.title)) return false;
+
   if (ENTRY_LEVEL_EMPLOYMENT.has(job.employmentType)) return true;
-  const haystack = `${job.title} ${job.tags.join(" ")}`;
-  return ENTRY_LEVEL_PATTERN.test(haystack);
+
+  // Tags join the haystack because teams carry the signal when titles are
+  // generic: on Lever and Greenhouse a posting titled "Software Engineer" under
+  // a team named "Internships" is the case that reading titles alone misses,
+  // and that is what the corrected `categories.team` mapping exists to expose.
+  return ENTRY_LEVEL_PATTERN.test(`${job.title} ${job.tags.join(" ")}`);
 }
 
 /**

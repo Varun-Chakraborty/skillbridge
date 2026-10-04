@@ -133,15 +133,23 @@ export async function fetchLever(company: string): Promise<NormalizedJob[]> {
     const salaryMax = rawMax !== null ? Math.round(rawMax * scale) : null;
     const currency = asString(salaryRange?.currency);
 
-    const lists = asArray(job.lists).flatMap((l) =>
-      [asString(asJson(l)?.text)].filter((x): x is string => !!x),
-    );
+    // Taxonomy comes from `categories`, mirroring Ashby above. It deliberately
+    // does not come from `lists`: on Lever that field is the posting's own
+    // description outline — `[{text: "In this role, you will:", content: "<div>…"}]` —
+    // so reading it as tags stored prose section headings as skill evidence and
+    // threw away the only field naming the team ("Engineering", "AI/ML"), which
+    // is exactly what a student's skills are matched against.
+    const tags = [
+      asString(categories?.team),
+      asString(categories?.department),
+      asString(job.workplaceType),
+    ].filter((x): x is string => !!x);
 
     return [
       {
         source,
         externalId: id,
-        kind: inferKind(title, lists, employmentType),
+        kind: inferKind(title, tags, employmentType),
         title,
         company,
         location,
@@ -155,7 +163,7 @@ export async function fetchLever(company: string): Promise<NormalizedJob[]> {
         logoUrl: null,
         publishedAt: toDate(job.createdAt),
         expiresAt: null,
-        tags: lists,
+        tags,
       } satisfies NormalizedJob,
     ];
   });

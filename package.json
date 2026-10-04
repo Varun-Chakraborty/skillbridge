@@ -20,6 +20,7 @@
     "jobs:check-encoding": "tsx scripts/check-encoding.ts",
     "jobs:check-migration-drift": "tsx scripts/check-migration-drift.ts",
     "jobs:check-fetch-retry": "tsx scripts/check-fetch-retry.ts",
+    "jobs:check-entry-level": "tsx scripts/check-entry-level.ts",
     "jobs:repair-encoding": "tsx scripts/repair-encoding.ts"
   },
   "dependencies": {

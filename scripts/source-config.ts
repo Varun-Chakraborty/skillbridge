@@ -108,7 +108,11 @@ async function set(args: string[]): Promise<void> {
 
 async function add(args: string[]): Promise<void> {
   const key = args[0];
-  if (!key) throw new Error("usage: jobs:sources add <key> [--token t] [--ttl n] [--weight n] [--ats]");
+  if (!key) {
+    throw new Error(
+      "usage: jobs:sources add <key> [--token t] [--ttl n] [--weight n] [--all]",
+    );
+  }
 
   const flag = (name: string): string | null => {
     const index = args.indexOf(name);
@@ -117,6 +121,11 @@ async function add(args: string[]): Promise<void> {
 
   const token = flag("--token");
   const isAts = args.includes("--ats") || token !== null;
+  // Set explicitly rather than left to the Prisma schema default of false, so
+  // this path cannot quietly disagree with DEFAULT_SOURCES and sourcesFromEnv,
+  // which both filter to entry-level. A new board added at the CLI was the one
+  // route that would otherwise have skipped the registry's policy.
+  const entryLevelOnly = !args.includes("--all");
 
   await prisma.ingestSource.upsert({
     where: { key },
@@ -126,10 +135,14 @@ async function add(args: string[]): Promise<void> {
       boardToken: token,
       ttlDays: Number(flag("--ttl")) || 30,
       weight: Number(flag("--weight")) || 100,
+      entryLevelOnly,
     },
     update: {},
   });
-  console.log(`present: ${key}${token ? ` (board ${token})` : ""}`);
+  console.log(
+    `present: ${key}${token ? ` (board ${token})` : ""} ` +
+      `(entry-level ${entryLevelOnly ? "only" : "off"})`,
+  );
 }
 
 async function main(): Promise<void> {
